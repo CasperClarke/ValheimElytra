@@ -22,6 +22,7 @@ namespace ValheimElytra.Flight
         {
             public float GravityMultiplier;
             public float BaseDrag;
+            public float DragMultiplier;
             public float PitchDiveAccel;
             public float PitchClimbLift;
             public float MinGlideSpeed;
@@ -29,6 +30,23 @@ namespace ValheimElytra.Flight
             public float TurnAlignment;
             public float StaminaDrainPerSecond;
         }
+
+        // Approximate low-Re NACA 4415 polar samples (AoA deg, Cl, Cd).
+        // Intentionally smoothed and clipped for game stability.
+        private static readonly float[] PolarAoADeg =
+        {
+            -12f, -10f, -8f, -6f, -4f, -2f, 0f, 2f, 4f, 6f, 8f, 10f, 12f, 14f, 16f, 18f, 20f
+        };
+
+        private static readonly float[] PolarCl =
+        {
+            -0.55f, -0.40f, -0.20f, 0.00f, 0.20f, 0.40f, 0.62f, 0.82f, 1.00f, 1.16f, 1.28f, 1.38f, 1.46f, 1.50f, 1.42f, 1.20f, 0.95f
+        };
+
+        private static readonly float[] PolarCd =
+        {
+            0.050f, 0.036f, 0.026f, 0.020f, 0.016f, 0.014f, 0.013f, 0.014f, 0.016f, 0.019f, 0.024f, 0.030f, 0.040f, 0.055f, 0.080f, 0.120f, 0.180f
+        };
 
         /// <summary>
         /// Integrate one FixedUpdate-style step for elytra gliding.
@@ -47,75 +65,138 @@ namespace ValheimElytra.Flight
             Params p,
             out float horizontalSpeedOut)
         {
-            // Direct Elytra-style equations (same structure/constants as snippet), with minimal dt normalization.
-            // Snippet assumes a 20 TPS step (~0.05s), so we scale additive terms by dt/0.05 and exponentiate damping.
-            float tickScale = Mathf.Clamp(dt / 0.05f, 0.1f, 3f);
-
+            // Point-mass glider model:
+            //   a = g + L + D, where L ⟂ v and D opposes v.
+            // Camera controls body attitude, which changes angle-of-attack and thus Cl/Cd.
             Vector3 look = cameraForward.sqrMagnitude > 0.001f ? cameraForward.normalized : Vector3.forward;
-            float lookX = look.x;
-            float lookY = look.y;
-            float lookZ = look.z;
+            float speed = Mathf.Max(vel.magnitude, 0.1f);
+            Vector3 vHat = vel / speed;
 
-            float pitchRad = pitchDegrees * Mathf.Deg2Rad;
-            float pitchCos = Mathf.Cos(pitchRad);
-            float pitchSin = Mathf.Sin(pitchRad);
-
-            float hVel = Mathf.Sqrt((vel.x * vel.x) + (vel.z * vel.z));
-            float hLook = Mathf.Sqrt((lookX * lookX) + (lookZ * lookZ));
-
-            // Equivalent of: sqrpitchcos = pitchcos^2 * min(1, |look| / 0.4)
-            float lookMag = Mathf.Sqrt((lookX * lookX) + (lookY * lookY) + (lookZ * lookZ));
-            float sqrPitchCos = pitchCos * pitchCos * Mathf.Min(1f, lookMag / 0.4f);
-
-            // Vanilla-ish gravity term from snippet: velY += -0.08 + sqrpitchcos * 0.06
-            float mcGravityStep = (-0.08f + (sqrPitchCos * 0.06f)) * p.GravityMultiplier;
-            vel.y += mcGravityStep * tickScale;
-
-            if (vel.y < 0f && hLook > 0.001f)
+            // Body frame from camera.
+            Vector3 bodyRight = Vector3.Cross(look, Vector3.up);
+            if (bodyRight.sqrMagnitude < 0.001f)
             {
-                float yacc = vel.y * -0.1f * sqrPitchCos * (p.PitchDiveAccel / 18f) * tickScale;
-                vel.y += yacc;
-                vel.x += lookX * yacc / hLook;
-                vel.z += lookZ * yacc / hLook;
+                bodyRight = Vector3.right;
+            }
+            bodyRight.Normalize();
+            Vector3 bodyUp = Vector3.Cross(bodyRight, look).normalized;
+            if (Vector3.Dot(bodyUp, Vector3.up) < 0f)
+            {
+                bodyUp = -bodyUp;
             }
 
-            // In the original snippet: if (pitch < 0) { ... }, with pitch where looking up is negative.
-            if (pitchRad < 0f && hLook > 0.001f)
+            // Lift is bodyUp projected onto plane normal to velocity.
+            Vector3 liftDir = bodyUp - (Vector3.Dot(bodyUp, vHat) * vHat);
+            float liftDirMag = liftDir.magnitude;
+            if (liftDirMag > 0.0001f)
             {
-                float yacc = hVel * -pitchSin * 0.04f * (p.PitchClimbLift / 28f) * tickScale;
-                vel.y += yacc * 3.5f;
-                vel.x -= lookX * yacc / hLook;
-                vel.z -= lookZ * yacc / hLook;
+                liftDir /= liftDirMag;
+            }
+            else
+            {
+                liftDir = Vector3.up;
             }
 
-            if (hLook > 0.001f)
+            // Angle of attack: positive when nose pitched above velocity vector.
+            float aoa = Mathf.Asin(Mathf.Clamp(Vector3.Dot(bodyUp, -vHat), -1f, 1f));
+            aoa = Mathf.Clamp(aoa, -0.6f, 0.6f); // ~ +/-34 deg stall limits
+
+            // NACA 4415 polar lookup (Cl/Cd from AoA).
+            float aoaDeg = aoa * Mathf.Rad2Deg;
+            InterpolatePolar(aoaDeg, out float clPolar, out float cdPolar);
+
+            // Keep legacy config knobs useful as multipliers rather than hard-coded fudge.
+            float liftScale = (p.PitchClimbLift / 28f);
+            float cl = clPolar * liftScale;
+            float cd = cdPolar * (p.BaseDrag / 0.15f) * p.DragMultiplier;
+            cd = Mathf.Max(0.0001f, cd);
+
+            // q proxy (0.5 * rho * v^2 * S / m folded into constants below).
+            float q = speed * speed;
+
+            // Acceleration terms.
+            Vector3 gravityAcc = Physics.gravity * p.GravityMultiplier;
+            Vector3 liftAcc = liftDir * (q * cl * 0.035f);
+            Vector3 dragAcc = -vHat * (q * cd * 0.020f);
+
+            // Optional dive-control authority (still physically plausible as posture-driven acceleration bias).
+            float lookDown = Mathf.Clamp(-look.y, 0f, 1f);
+            Vector3 lookHoriz = new Vector3(look.x, 0f, look.z);
+            if (lookHoriz.sqrMagnitude > 0.001f)
             {
-                float align = 1f - Mathf.Pow(1f - 0.1f, tickScale * (p.TurnAlignment / 240f));
-                vel.x += ((lookX / hLook) * hVel - vel.x) * align;
-                vel.z += ((lookZ / hLook) * hVel - vel.z) * align;
+                lookHoriz.Normalize();
+            }
+            else
+            {
+                lookHoriz = new Vector3(vHat.x, 0f, vHat.z).normalized;
+            }
+            Vector3 diveControlAcc = lookHoriz * (p.PitchDiveAccel * 0.03f * lookDown);
+
+            vel += (gravityAcc + liftAcc + dragAcc + diveControlAcc) * dt;
+
+            // Yaw steering toward look direction (control, not free acceleration).
+            Vector3 horizVel = new Vector3(vel.x, 0f, vel.z);
+            float horizSpeed = horizVel.magnitude;
+            if (horizSpeed > 0.01f && lookHoriz.sqrMagnitude > 0.001f)
+            {
+                Vector3 currentDir = horizVel / horizSpeed;
+                float maxTurn = p.TurnAlignment * Mathf.Deg2Rad * dt;
+                Vector3 turned = Vector3.RotateTowards(currentDir, lookHoriz, maxTurn, 0f);
+
+                // Turning should cost energy: apply extra drag from heading-rate ("induced turn drag").
+                float turnAngle = Vector3.Angle(currentDir, turned) * Mathf.Deg2Rad; // radians this tick
+                float turnRate = turnAngle / Mathf.Max(dt, 1e-4f); // rad/s
+                float turnLossCoeff = 0.020f * (1f + (p.BaseDrag / 0.15f));
+                float turnDragMag = turnLossCoeff * turnRate * horizSpeed;
+                float postTurnSpeed = Mathf.Max(0f, horizSpeed - (turnDragMag * dt));
+
+                vel.x = turned.x * postTurnSpeed;
+                vel.z = turned.z * postTurnSpeed;
             }
 
-            float dragXZ = Mathf.Pow(0.99f, tickScale * (p.BaseDrag / 0.15f));
-            float dragY = Mathf.Pow(0.98f, tickScale * (p.BaseDrag / 0.15f));
-            vel.x *= dragXZ;
-            vel.y *= dragY;
-            vel.z *= dragXZ;
-
-            hVel = Mathf.Sqrt((vel.x * vel.x) + (vel.z * vel.z));
-            horizontalSpeedOut = Mathf.Clamp(hVel, 0f, p.MaxGlideSpeed * 2f); // clamp only absurd values
-
-            // Hard cap to avoid runaway numbers if another mod boosts speed
+            // Safety clamp only (kept to prevent numeric blowups in modded stacks).
             if (vel.magnitude > p.MaxGlideSpeed * 1.5f)
             {
                 vel = vel.normalized * (p.MaxGlideSpeed * 1.5f);
             }
 
-            // Tiny anti-stall nudge for low-speed dives (not part of vanilla snippet, kept minimal).
-            if (horizontalSpeedOut < p.MinGlideSpeed && lookY < -0.15f && hLook > 0.001f)
+            horizontalSpeedOut = Mathf.Clamp(new Vector3(vel.x, 0f, vel.z).magnitude, 0f, p.MaxGlideSpeed * 2f);
+        }
+
+        private static void InterpolatePolar(float aoaDeg, out float cl, out float cd)
+        {
+            if (aoaDeg <= PolarAoADeg[0])
             {
-                Vector3 nudge = new Vector3(lookX / hLook, 0f, lookZ / hLook) * (p.MinGlideSpeed * 0.15f * dt);
-                vel += nudge;
+                cl = PolarCl[0];
+                cd = PolarCd[0];
+                return;
             }
+
+            int last = PolarAoADeg.Length - 1;
+            if (aoaDeg >= PolarAoADeg[last])
+            {
+                cl = PolarCl[last];
+                cd = PolarCd[last];
+                return;
+            }
+
+            for (int i = 0; i < last; i++)
+            {
+                float a0 = PolarAoADeg[i];
+                float a1 = PolarAoADeg[i + 1];
+                if (aoaDeg < a0 || aoaDeg > a1)
+                {
+                    continue;
+                }
+
+                float t = (aoaDeg - a0) / (a1 - a0);
+                cl = Mathf.Lerp(PolarCl[i], PolarCl[i + 1], t);
+                cd = Mathf.Lerp(PolarCd[i], PolarCd[i + 1], t);
+                return;
+            }
+
+            cl = PolarCl[last];
+            cd = PolarCd[last];
         }
     }
 }

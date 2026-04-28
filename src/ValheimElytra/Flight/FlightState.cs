@@ -22,10 +22,15 @@ namespace ValheimElytra.Flight
         /// <summary>Cooldown after leaving glide before stamina can recharge (optional future use).</summary>
         public float GlideExitTimer;
 
+        /// <summary>Whether visual pose override is currently active for this player.</summary>
+        public bool VisualPoseApplied;
+
+
         public void ResetSession()
         {
             IsGliding = false;
             GlideTime = 0f;
+            VisualPoseApplied = false;
         }
     }
 }

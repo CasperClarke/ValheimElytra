@@ -20,12 +20,14 @@ namespace ValheimElytra.Flight
 
         private static ConfigEntry<float> GravityMultiplier { get; set; } = null!;
         private static ConfigEntry<float> BaseDrag { get; set; } = null!;
+        private static ConfigEntry<float> DragMultiplier { get; set; } = null!;
         private static ConfigEntry<float> PitchDiveAccel { get; set; } = null!;
         private static ConfigEntry<float> PitchClimbLift { get; set; } = null!;
         private static ConfigEntry<float> MinGlideSpeed { get; set; } = null!;
         private static ConfigEntry<float> MaxGlideSpeed { get; set; } = null!;
         private static ConfigEntry<float> TurnAlignment { get; set; } = null!;
         private static ConfigEntry<float> StaminaDrainPerSecond { get; set; } = null!;
+        private static ConfigEntry<bool> VisualPoseEnabled { get; set; } = null!;
 
         public static void BindConfig(ConfigFile config)
         {
@@ -44,6 +46,14 @@ namespace ValheimElytra.Flight
                 new ConfigDescription(
                     "Air drag coefficient (higher bleeds speed faster). Tweak with GravityMultiplier.",
                     new AcceptableValueRange<float>(0.01f, 1f)));
+
+            DragMultiplier = config.Bind(
+                "Elytra Physics",
+                "DragMultiplier",
+                1.2f,
+                new ConfigDescription(
+                    "Multiplier applied to NACA 4415 Cd(alpha) after BaseDrag scaling. >1.0 adds drag, <1.0 reduces drag.",
+                    new AcceptableValueRange<float>(0.5f, 4f)));
 
             PitchDiveAccel = config.Bind(
                 "Elytra Physics",
@@ -92,6 +102,12 @@ namespace ValheimElytra.Flight
                 new ConfigDescription(
                     "Stamina drain per second while gliding (0 disables).",
                     new AcceptableValueRange<float>(0f, 50f)));
+
+            VisualPoseEnabled = config.Bind(
+                "Visual",
+                "EnableVisualFlightPose",
+                true,
+                "Rotate the player model toward direction of travel while gliding.");
         }
 
         public static void TickPlayer(Player player, float dt)
@@ -136,6 +152,11 @@ namespace ValheimElytra.Flight
             {
                 state.IsGliding = false;
                 FlightSync.ClearLocalZdo(player);
+                if (state.VisualPoseApplied)
+                {
+                    VisualFlightPose.Clear(player);
+                    state.VisualPoseApplied = false;
+                }
                 if (ValheimElytraPlugin.DebugLogging.Value && ++_debugTickCounter % 60 == 0)
                 {
                     ValheimElytraPlugin.Log.LogInfo("Elytra skip: deep water.");
@@ -154,6 +175,12 @@ namespace ValheimElytra.Flight
                     state.ResetSession();
                 }
 
+                if (state.VisualPoseApplied)
+                {
+                    VisualFlightPose.Clear(player);
+                    state.VisualPoseApplied = false;
+                }
+
                 FlightSync.ClearLocalZdo(player);
                 if (ValheimElytraPlugin.DebugLogging.Value && ++_debugTickCounter % 45 == 0)
                 {
@@ -167,15 +194,13 @@ namespace ValheimElytra.Flight
             // Feather cape normally hard-caps downward speed; our override replaces that behavior while gliding.
 
             Vector3 camForward = CameraSteering.GetCameraForward(flattenYawOnly: false);
-            float pitchRaw = CameraSteering.GetCameraPitchDegrees();
-            // On current Valheim camera conventions, raw pitch is inverted for our Elytra model.
-            // We invert here so "look down" yields positive dive acceleration.
-            float pitch = -pitchRaw;
+            float pitch = CameraSteering.GetCameraPitchDegrees();
 
             var fp = new FlightPhysics.Params
             {
                 GravityMultiplier = GravityMultiplier.Value,
                 BaseDrag = BaseDrag.Value,
+                DragMultiplier = DragMultiplier.Value,
                 PitchDiveAccel = PitchDiveAccel.Value,
                 PitchClimbLift = PitchClimbLift.Value,
                 MinGlideSpeed = MinGlideSpeed.Value,
@@ -202,6 +227,12 @@ namespace ValheimElytra.Flight
             Vector3 horizLook = new Vector3(camForward.x, 0f, camForward.z);
             state.LastGlideDirectionHorizontal = horizLook.sqrMagnitude > 0.001f ? horizLook.normalized : Vector3.forward;
 
+            if (VisualPoseEnabled.Value)
+            {
+                VisualFlightPose.Apply(player, vel, dt);
+                state.VisualPoseApplied = true;
+            }
+
             // Stamina cost (same peer that owns movement)
             if (StaminaDrainPerSecond.Value > 0f)
             {
@@ -217,7 +248,7 @@ namespace ValheimElytra.Flight
             if (ValheimElytraPlugin.DebugLogging.Value && Time.frameCount % 45 == 0)
             {
                 ValheimElytraPlugin.Log.LogInfo(
-                    $"Elytra tick: speedH={horizSpeed:0.0} speed3D={vel.magnitude:0.0} pitchRaw={pitchRaw:0.0} pitchUsed={pitch:0.0} " +
+                    $"Elytra tick: speedH={horizSpeed:0.0} speed3D={vel.magnitude:0.0} pitch={pitch:0.0} " +
                     $"glide={state.IsGliding}, hasCape={hasCape}, airborne={airborne}, dt={dt:0.000}, " +
                     $"capeState=[{CapeDetection.DescribeCapeState(player)}]");
             }
