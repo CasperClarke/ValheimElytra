@@ -1,0 +1,9 @@
+{
+  "name": "ValheimElytra",
+  "version_number": "1.0.0",
+  "website_url": "",
+  "description": "Elytra-style gliding for the vanilla Feather Cape. Camera yaw steers, pitch trades speed and lift. BepInEx. See README for config and multiplayer notes.",
+  "dependencies": [
+    "denikson-BepInExPack_Valheim-5.4.2333"
+  ]
+}

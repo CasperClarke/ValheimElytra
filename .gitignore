@@ -1,0 +1,11 @@
+dist/
+**/bin/
+**/obj/
+*.user
+*.userosscache
+*.suo
+*.cache
+.vs/
+.idea/
+*.DotSettings.user
+Thunderstore/*.zip

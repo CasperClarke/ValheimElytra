@@ -1,0 +1,68 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>ValheimElytra</AssemblyName>
+    <RootNamespace>ValheimElytra</RootNamespace>
+    <OutputPath>..\..\dist\BepInEx\plugins\ValheimElytra\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <!--
+    BepInEx.dll resolution (first match wins):
+    1) $(BepInExCoreDir)\BepInEx.dll (Valheim install: BepInEx\core)
+    2) repo libs\BepInEx.dll  (local copy; see libs/README.md)
+    3) repo lib\BepInEx.dll   (legacy path, same idea)
+    Harmony: HarmonyX NuGet (0Harmony) — do not add a second 0Harmony reference.
+  -->
+  <PropertyGroup>
+    <_LocalBepInExLibsDir>$(MSBuildThisFileDirectory)..\..\libs</_LocalBepInExLibsDir>
+    <_LocalBepInExLibDir>$(MSBuildThisFileDirectory)..\..\lib</_LocalBepInExLibDir>
+  </PropertyGroup>
+  <PropertyGroup>
+    <_BepInExPath Condition="'$(_BepInExPath)'=='' and '$(BepInExCoreDir)' != '' and Exists('$(BepInExCoreDir)\BepInEx.dll')">$(BepInExCoreDir)\BepInEx.dll</_BepInExPath>
+    <_BepInExPath Condition="'$(_BepInExPath)'=='' and Exists('$(_LocalBepInExLibsDir)\BepInEx.dll')">$(_LocalBepInExLibsDir)\BepInEx.dll</_BepInExPath>
+    <_BepInExPath Condition="'$(_BepInExPath)'=='' and Exists('$(_LocalBepInExLibDir)\BepInEx.dll')">$(_LocalBepInExLibDir)\BepInEx.dll</_BepInExPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="BepInEx" Condition="'$(_BepInExPath)' != ''">
+      <HintPath>$(_BepInExPath)</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="assembly_valheim">
+      <HintPath>$(ValheimManagedDir)\assembly_valheim.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="assembly_utils">
+      <HintPath>$(ValheimManagedDir)\assembly_utils.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(ValheimManagedDir)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(ValheimManagedDir)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>$(ValheimManagedDir)\UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(ValheimManagedDir)\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="HarmonyX" Version="2.10.2" />
+  </ItemGroup>
+
+  <Target Name="CheckValheimRefs" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(ValheimManagedDir)\assembly_valheim.dll')" Text="Missing Valheim managed assemblies at '$(ValheimManagedDir)'. Set VALHEIM / VALHEIM_MANAGED or /p:ValheimPath=... See docs/Development.md" />
+    <Error Condition="'$(_BepInExPath)'==''" Text="Missing BepInEx.dll. Copy it from Valheim's BepInEx\core into libs\ at the repo root (recommended), use lib\, or install BepInEx / set BEPINEX_CORE. See docs/Development.md and libs/README.md." />
+  </Target>
+</Project>

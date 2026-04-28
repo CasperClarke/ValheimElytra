@@ -1,0 +1,25 @@
+<Project>
+  <!--
+    Central build properties for ValheimElytra.
+    
+    Override paths via environment variables (recommended):
+      VALHEIM        = Steam install dir, e.g. C:\Program Files (x86)\Steam\steamapps\common\Valheim
+      VALHEIM_MANAGED = Usually $(VALHEIM)\valheim_Data\Managed (note: valheim_Data on Windows)
+      BEPINEX_CORE   = Usually $(VALHEIM)\BepInEx\core
+    
+    Or pass /p:ValheimPath=... on the dotnet command line (see docs/Development.md).
+  -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- Valheim Windows install uses "valheim_Data" (lowercase v) -->
+    <ValheimPath Condition="'$(ValheimPath)' == ''">$(VALHEIM)</ValheimPath>
+    <ValheimManagedDir Condition="'$(ValheimManagedDir)' == ''">$(VALHEIM_MANAGED)</ValheimManagedDir>
+    <ValheimManagedDir Condition="'$(ValheimManagedDir)' == '' AND '$(ValheimPath)' != ''">$(ValheimPath)\valheim_Data\Managed</ValheimManagedDir>
+    <BepInExCoreDir Condition="'$(BepInExCoreDir)' == ''">$(BEPINEX_CORE)</BepInExCoreDir>
+    <BepInExCoreDir Condition="'$(BepInExCoreDir)' == '' AND '$(ValheimPath)' != ''">$(ValheimPath)\BepInEx\core</BepInExCoreDir>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,234 @@
+[Message:   BepInEx] BepInEx 5.4.23.3 - valheim (2/2/2026 5:07:03 AM)
+[Message:   BepInEx] User is running BepInExPack Valheim version 5.4.2333 from Thunderstore
+[Info   :   BepInEx] Running under Unity v6000.0.61.7643309
+[Info   :   BepInEx] CLR runtime version: 4.0.30319.42000
+[Info   :   BepInEx] Supports SRE: True
+[Info   :   BepInEx] System platform: Bits64, Windows
+[Message:   BepInEx] Preloader started
+[Info   :   BepInEx] Loaded 1 patcher method from [BepInEx.Preloader 5.4.23.3]
+[Info   :   BepInEx] 1 patcher plugin loaded
+[Info   :   BepInEx] Patching [UnityEngine.CoreModule] with [BepInEx.Chainloader]
+[Message:   BepInEx] Preloader finished
+[Message:   BepInEx] Chainloader ready
+[Message:   BepInEx] Chainloader started
+[Info   :   BepInEx] 2 plugins to load
+[Info   :   BepInEx] Loading [Jotunn 2.28.0]
+[Info   :Jotunn.Main] Initializing ModCompatibility
+[Info   :Jotunn.Main] Initializing SynchronizationManager
+[Info   :Jotunn.Main] Initializing NetworkManager
+[Info   :   BepInEx] Loading [ValheimElytra 1.0.0]
+[Info   :ValheimElytra] ValheimElytra 1.0.0 loaded (Harmony patched on Player.CustomFixedUpdate).
+[Message:   BepInEx] Chainloader startup complete
+[Info   : Unity Log] 04/27/2026 20:30:42: Using environment steamid 892970
+
+[Info   : Unity Log] 04/27/2026 20:30:42: Using steam APPID:892970
+
+[Info   : Unity Log] 04/27/2026 20:30:42: Authentication:k_ESteamNetworkingAvailability_Attempting
+
+[Info   : Unity Log] 04/27/2026 20:30:42: Platform doesn't implement Process Lifetime Management! Don't initialize suspend manager.
+
+[Info   : Unity Log] 04/27/2026 20:30:42: Initialized platform!
+
+[Info   : Unity Log] 04/27/2026 20:30:42: Platform doesn't implement matchmaking! Don't initialize matchmaking manager.
+
+[Info   : Unity Log] 04/27/2026 20:30:42: All files in local storage save data:
+C:/Users/Camer/AppData/LocalLow/IronGate/Valheim\adminlist.txt (40)
+C:/Users/Camer/AppData/LocalLow/IronGate/Valheim\bannedlist.txt (41)
+C:/Users/Camer/AppData/LocalLow/IronGate/Valheim\permittedlist.txt (43)
+C:/Users/Camer/AppData/LocalLow/IronGate/Valheim\Player-prev.log (19425)
+C:/Users/Camer/AppData/LocalLow/IronGate/Valheim\Player.log (2993)
+C:/Users/Camer/AppData/LocalLow/IronGate/Valheim\worlds.zip (160189399)
+C:/Users/Camer/AppData/LocalLow/IronGate/Valheim\worlds_local.zip (199098629)
+
+[Info   : Unity Log] 04/27/2026 20:30:42: All files in platform save data:
+characters/casper.fch.old (66526)
+worlds/Minecraft_backup_auto-20260118172137.fwl (50)
+worlds/Minecraft_backup_auto-20260118172137.db (27625695)
+worlds/Minecraft_backup_auto-20260118195124.fwl (50)
+worlds/Minecraft_backup_auto-20260118195124.db (29234813)
+worlds/Minecraft_backup_auto-20260125164500.fwl (50)
+worlds/Minecraft_backup_auto-20260125164500.db (29487487)
+worlds/Minecraft_backup_restore-20260125-171225.fwl (50)
+worlds/Minecraft_backup_restore-20260125-171225.db (29488651)
+serverlist/recent (169)
+serverlist/recent.old (169)
+characters/casper.fch (66526)
+characters/cartograhper.fch (12549)
+characters/cartograhper_backup_auto-20260325215623.fch (795)
+worlds/Cartographic.fwl (53)
+worlds/Cartographic_backup_auto-20260325215642.fwl (53)
+characters/cartograhper.fch.old (12549)
+worlds/Cartographic.db (4418011)
+characters/casper_backup_auto-20260405141615.fch (58954)
+characters/casper_backup_auto-20260405162854.fch (59932)
+characters/casper_backup_auto-20260419142923.fch (60451)
+characters/casper_backup_auto-20260419185047.fch (66526)
+characters/casper_backup_auto-20251102154751.fch (800)
+worlds/Minecraft_backup_auto-20251102154912.fwl (50)
+worlds/Minecraft_backup_auto-20251102200925.db (4711926)
+worlds/Minecraft_backup_auto-20251102200925.fwl (50)
+
+[Info   : Unity Log] 04/27/2026 20:30:42: Initializing preferences provider...
+
+[Info   : Unity Log] 04/27/2026 20:30:42: No preference provider available for this platform!
+
+[Info   : Unity Log] 04/27/2026 20:30:42: Set background loading budget to Low
+
+[Info   : Unity Log] 04/27/2026 20:30:42: Loading first scene!
+
+[Info   : Unity Log] 04/27/2026 20:30:42: Preferences initialized! Activating first scene!
+
+[Info   : Unity Log] 04/27/2026 20:30:42: 
+
+[Info   : Unity Log] 04/27/2026 20:30:43: Starting to load scene:start.unity (169d7618616154c03be07e9ad3af5893)
+
+[Info   : Unity Log] 04/27/2026 20:30:43: Set background loading budget to Normal
+
+[Info   : Unity Log] 04/27/2026 20:30:43: Loaded localization file #0 - 'localization' language: 'English'
+
+[Info   : Unity Log] 04/27/2026 20:30:43: Loaded localization file #1 - 'localization_extra' language: 'English'
+
+[Info   : Unity Log] 04/27/2026 20:30:43: Loaded localization file #2 - 'heightmap_message' language: 'English'
+
+[Info   : Unity Log] 04/27/2026 20:30:43: Loaded localization file #3 - 'localization_witch' language: 'English'
+
+[Info   : Unity Log] 04/27/2026 20:30:43: Loaded localization file #4 - 'localization_ashlands' language: 'English'
+
+[Info   : Unity Log] 04/27/2026 20:30:43: Loaded localization file #5 - 'localization_captions' language: 'English'
+
+[Info   : Unity Log] 04/27/2026 20:30:43: Loaded localization file #6 - 'localization_combatupdate' language: 'English'
+
+[Info   : Unity Log] 04/27/2026 20:30:43: Loaded localization file #7 - 'localization_celebrationupdate' language: 'English'
+
+[Info   : Unity Log] 04/27/2026 20:30:43: Loaded localization file #0 - 'localization' language: 'English'
+
+[Info   : Unity Log] 04/27/2026 20:30:43: Loaded localization file #1 - 'localization_extra' language: 'English'
+
+[Info   : Unity Log] 04/27/2026 20:30:43: Loaded localization file #2 - 'heightmap_message' language: 'English'
+
+[Info   : Unity Log] 04/27/2026 20:30:43: Loaded localization file #3 - 'localization_witch' language: 'English'
+
+[Info   : Unity Log] 04/27/2026 20:30:43: Loaded localization file #4 - 'localization_ashlands' language: 'English'
+
+[Info   : Unity Log] 04/27/2026 20:30:43: Loaded localization file #5 - 'localization_captions' language: 'English'
+
+[Info   : Unity Log] 04/27/2026 20:30:43: Loaded localization file #6 - 'localization_combatupdate' language: 'English'
+
+[Info   : Unity Log] 04/27/2026 20:30:43: Loaded localization file #7 - 'localization_celebrationupdate' language: 'English'
+
+[Info   : Unity Log] 04/27/2026 20:30:47: Set background loading budget to High
+
+[Info   : Unity Log] 04/27/2026 20:30:47: GPU Device: 10DE:2704 (NVIDIA)
+
+[Info   : Unity Log] 04/27/2026 20:30:47: Set background loading budget to Low
+
+[Warning: Unity Log] Only custom filters can be played. Please add a custom filter or an audioclip to the audiosource (Amb_MainMenu).
+[Warning: Unity Log] 04/27/2026 20:30:47: Missing audio clip in music respawn
+
+[Info   : Unity Log] 04/27/2026 20:30:47: Steam initialized, persona:CasperClarke
+
+[Info   : Unity Log] 04/27/2026 20:30:47: Valheim version: 0.221.12 (network version 36)
+
+[Info   : Unity Log] 04/27/2026 20:30:47: Worldgenerator version setup:2
+
+[Info   : Unity Log] 04/27/2026 20:30:47: Render threading mode:LegacyJobified
+
+[Info   : Unity Log] 04/27/2026 20:30:47: Checking for installed DLCs
+
+[Info   : Unity Log] 04/27/2026 20:30:47: DLC:beta installed:False
+
+[Info   : Unity Log] 04/27/2026 20:30:47: Sending PlayFab login request (attempt 1)
+
+[Info   : Unity Log] 04/27/2026 20:30:47: Starting music menu
+
+[Info   : Unity Log] 04/27/2026 20:30:47: Session auth respons callback
+
+[Info   : Unity Log] 04/27/2026 20:30:48: Logged in PlayFab user via Steam auth session ticket
+
+[Info   : Unity Log] 04/27/2026 20:30:48: PlayFab local entity ID is 5F54C153971BC3F6
+
+[Info   : Unity Log] 04/27/2026 20:30:48: Released session ticket
+
+[Info   : Unity Log] 04/27/2026 20:30:51: show character selection
+
+[Info   : Unity Log] 04/27/2026 20:30:52: OnCharacterStart
+
+[Info   : Unity Log] 04/27/2026 20:30:55: Loading main scene
+
+[Info   : Unity Log] 04/27/2026 20:30:55: Audioman already exist, destroying self
+
+[Info   : Unity Log] 04/27/2026 20:30:55: Steam initialized, persona:CasperClarke
+
+[Info   : Unity Log] 04/27/2026 20:30:55: Loading player profile cartograhper
+
+[Info   : Unity Log] 04/27/2026 20:30:55: isModded: True
+
+[Info   : Unity Log] 04/27/2026 20:30:55: Zonesystem Awake 876
+
+[Info   : Unity Log] 04/27/2026 20:30:55: DungeonDB Awake 876
+
+[Info   : Unity Log] 04/27/2026 20:30:55: Steam initialized, persona:CasperClarke
+
+[Info   : Unity Log] 04/27/2026 20:30:55: Worldgenerator version setup:2
+
+[Info   : Unity Log] 04/27/2026 20:30:57: Checking for installed DLCs
+
+[Info   : Unity Log] 04/27/2026 20:30:57: DLC:beta installed:False
+
+[Info   :Jotunn.Managers.NetworkManager] Registering 2 custom RPCs
+[Info   : Unity Log] 04/27/2026 20:30:57: Zonesystem Start 876
+
+[Info   : Unity Log] 04/27/2026 20:30:57: Added 3 locations, 0 vegetations, 0 environments, 0 biome env-setups, 0 clutter  from main
+
+[Info   : Unity Log] 04/27/2026 20:30:57: Added 1 locations, 0 vegetations, 2 environments, 0 biome env-setups, 0 clutter  from main
+
+[Info   : Unity Log] 04/27/2026 20:30:57: Added 27 locations, 25 vegetations, 5 environments, 1 biome env-setups, 3 clutter  from main
+
+[Info   : Unity Log] 04/27/2026 20:30:57: Added 4 locations, 0 vegetations, 1 environments, 0 biome env-setups, 0 clutter  from main
+
+[Info   : Unity Log] 04/27/2026 20:30:57: Added 25 locations, 33 vegetations, 8 environments, 2 biome env-setups, 2 clutter  from main
+
+[Info   : Unity Log] 04/27/2026 20:30:57: DungeonDB Start 876
+
+[Info   : Unity Log] 04/27/2026 20:30:57: ZRpc timeout set to 30s 
+
+[Info   : Unity Log] 04/27/2026 20:30:57: ZNET START
+
+[Info   : Unity Log] 04/27/2026 20:30:57: Load world: Cartographic (Cartographic)
+
+[Info   : Unity Log] 04/27/2026 20:30:57: Loading 97330 zdos, my sessionID: 1495155757, data version: 37
+
+[Info   : Unity Log] 04/27/2026 20:30:57: Loading in ZDOs
+
+[Info   : Unity Log] 04/27/2026 20:30:57: Adding to Dictionary
+
+[Info   : Unity Log] 04/27/2026 20:30:57: Adding to Sectors
+
+[Info   : Unity Log] 04/27/2026 20:30:57: Connecting Portals, Spawners & ZSyncTransforms
+
+[Info   : Unity Log] ConnectPortals => Connected 1 portals.
+[Info   : Unity Log] ConnectSpawners => Connected 4 spawners and 4 'done' spawners.
+[Info   : Unity Log] 04/27/2026 20:30:57: Loaded 11278 locations
+
+[Info   : Unity Log] 04/27/2026 20:30:57: Unloading unused assets
+
+[Info   : Unity Log] 04/27/2026 20:30:58: Loading minimap textures done [225ms]
+
+[Info   : Unity Log] 04/27/2026 20:30:58: Minimap: unpacking compressed mapData 8759 => 8388697 bytes
+
+[Info   : Unity Log] 04/27/2026 20:30:58: Starting respawn
+
+[Info   : Unity Log] 04/27/2026 20:30:58: tip:$loadscreen_tip13
+
+[Info   : Unity Log] 04/27/2026 20:31:06: Spawned after 8.019993
+
+[Warning: Unity Log] 04/27/2026 20:31:06: Character ID for player ([Cartograhper, 0:0], [CasperClarke, 0:0], CasperClarke) was 0:0. Skipping.
+
+[Info   : Unity Log] 04/27/2026 20:31:06: Skipping unloading unused assets
+
+[Info   : Unity Log] 04/27/2026 20:31:06: Minimap: Adding unique location (4.54, 34.06, -0.29)
+
+[Info   : Unity Log] 04/27/2026 20:31:08: Starting music meadows
+
+[Info   : Unity Log] 04/27/2026 20:31:08: Resumed music meadows at 0
+
