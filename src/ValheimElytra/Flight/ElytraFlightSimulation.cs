@@ -16,6 +16,7 @@ namespace ValheimElytra.Flight
     public static class ElytraFlightSimulation
     {
         private static readonly Dictionary<int, FlightState> StatesByPlayerId = new Dictionary<int, FlightState>();
+        private static int _debugTickCounter;
 
         private static ConfigEntry<float> GravityMultiplier { get; set; } = null!;
         private static ConfigEntry<float> BaseDrag { get; set; } = null!;
@@ -116,6 +117,10 @@ namespace ValheimElytra.Flight
             ZNetView? nview = CharacterNetAccess.GetZNetView(player);
             if (nview == null || !nview.IsValid() || !nview.IsOwner())
             {
+                if (ValheimElytraPlugin.DebugLogging.Value && ++_debugTickCounter % 120 == 0)
+                {
+                    ValheimElytraPlugin.Log.LogInfo("Elytra skip: non-owner or invalid ZNetView.");
+                }
                 return;
             }
 
@@ -131,6 +136,10 @@ namespace ValheimElytra.Flight
             {
                 state.IsGliding = false;
                 FlightSync.ClearLocalZdo(player);
+                if (ValheimElytraPlugin.DebugLogging.Value && ++_debugTickCounter % 60 == 0)
+                {
+                    ValheimElytraPlugin.Log.LogInfo("Elytra skip: deep water.");
+                }
                 return;
             }
 
@@ -146,13 +155,22 @@ namespace ValheimElytra.Flight
                 }
 
                 FlightSync.ClearLocalZdo(player);
+                if (ValheimElytraPlugin.DebugLogging.Value && ++_debugTickCounter % 45 == 0)
+                {
+                    ValheimElytraPlugin.Log.LogInfo(
+                        $"Elytra inactive: hasCape={hasCape}, airborne={airborne}, " +
+                        $"grounded={!airborne}, capeState=[{CapeDetection.DescribeCapeState(player)}]");
+                }
                 return;
             }
 
             // Feather cape normally hard-caps downward speed; our override replaces that behavior while gliding.
 
-            Vector3 camForwardYaw = CameraSteering.GetCameraForward(flattenYawOnly: true);
-            float pitch = CameraSteering.GetCameraPitchDegrees();
+            Vector3 camForward = CameraSteering.GetCameraForward(flattenYawOnly: false);
+            float pitchRaw = CameraSteering.GetCameraPitchDegrees();
+            // On current Valheim camera conventions, raw pitch is inverted for our Elytra model.
+            // We invert here so "look down" yields positive dive acceleration.
+            float pitch = -pitchRaw;
 
             var fp = new FlightPhysics.Params
             {
@@ -171,7 +189,7 @@ namespace ValheimElytra.Flight
             FlightPhysics.IntegrateGlide(
                 dt,
                 ref vel,
-                camForwardYaw,
+                camForward,
                 pitch,
                 fp,
                 out float horizSpeed);
@@ -181,7 +199,8 @@ namespace ValheimElytra.Flight
             state.IsGliding = true;
             state.LastHorizontalSpeed = horizSpeed;
             state.GlideTime += dt;
-            state.LastGlideDirectionHorizontal = camForwardYaw.sqrMagnitude > 0.001f ? camForwardYaw.normalized : Vector3.forward;
+            Vector3 horizLook = new Vector3(camForward.x, 0f, camForward.z);
+            state.LastGlideDirectionHorizontal = horizLook.sqrMagnitude > 0.001f ? horizLook.normalized : Vector3.forward;
 
             // Stamina cost (same peer that owns movement)
             if (StaminaDrainPerSecond.Value > 0f)
@@ -197,8 +216,10 @@ namespace ValheimElytra.Flight
 
             if (ValheimElytraPlugin.DebugLogging.Value && Time.frameCount % 45 == 0)
             {
-                ValheimElytraPlugin.Log.LogDebug(
-                    $"Elytra tick: speedH={horizSpeed:0.0} speed3D={vel.magnitude:0.0} pitch={pitch:0.0} glide={state.IsGliding}");
+                ValheimElytraPlugin.Log.LogInfo(
+                    $"Elytra tick: speedH={horizSpeed:0.0} speed3D={vel.magnitude:0.0} pitchRaw={pitchRaw:0.0} pitchUsed={pitch:0.0} " +
+                    $"glide={state.IsGliding}, hasCape={hasCape}, airborne={airborne}, dt={dt:0.000}, " +
+                    $"capeState=[{CapeDetection.DescribeCapeState(player)}]");
             }
         }
     }

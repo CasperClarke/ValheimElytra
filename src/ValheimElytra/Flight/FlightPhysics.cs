@@ -35,83 +35,98 @@ namespace ValheimElytra.Flight
         /// </summary>
         /// <param name="dt">Fixed delta time (<see cref="Time.fixedDeltaTime"/>).</param>
         /// <param name="vel">Current rigidbody velocity (modified in-place).</param>
-        /// <param name="cameraForwardFlattened">Camera forward flattened to XZ for horizontal steering.</param>
+        /// <param name="cameraForward">Camera forward (full 3D direction).</param>
         /// <param name="pitchDegrees">Pitch from <see cref="CameraSteering.GetCameraPitchDegrees"/>.</param>
         /// <param name="p">Tuning parameters from BepInEx config.</param>
         /// <param name="horizontalSpeedOut">Horizontal speed magnitude after integration (for sync / debug).</param>
         public static void IntegrateGlide(
             float dt,
             ref Vector3 vel,
-            Vector3 cameraForwardFlattened,
+            Vector3 cameraForward,
             float pitchDegrees,
             Params p,
             out float horizontalSpeedOut)
         {
-            Vector3 desiredHorizDir = cameraForwardFlattened.sqrMagnitude > 0.001f
-                ? cameraForwardFlattened.normalized
-                : Vector3.forward;
+            // Minecraft's formulas are tuned around a 20 TPS update.
+            float tickScale = Mathf.Clamp(dt / 0.05f, 0.15f, 2f);
+
+            Vector3 look = cameraForward.sqrMagnitude > 0.001f ? cameraForward.normalized : Vector3.forward;
+            float lookX = look.x;
+            float lookY = look.y;
+            float lookZ = look.z;
 
             Vector3 horizontal = new Vector3(vel.x, 0f, vel.z);
-            float horizSpeed = horizontal.magnitude;
+            float hVel = horizontal.magnitude;
+            float hLook = Mathf.Sqrt((lookX * lookX) + (lookZ * lookZ));
+            float pitchCos = Mathf.Cos(pitchDegrees * Mathf.Deg2Rad);
+            pitchCos = Mathf.Abs(pitchCos);
+            pitchCos *= pitchCos;
 
-            // --- Turn / bank: slowly align horizontal velocity toward camera yaw direction ---
-            if (desiredHorizDir.sqrMagnitude > 0.001f && horizSpeed > 0.01f)
+            // Baseline glide gravity (customizable). This is the primary sink term.
+            vel.y += Physics.gravity.y * p.GravityMultiplier * dt;
+
+            // Elytra-like down-velocity conversion into forward motion.
+            if (vel.y < 0f && hLook > 0.001f)
             {
-                Vector3 currentDir = horizontal.normalized;
-                float turn = p.TurnAlignment * dt;
-                Vector3 blended = Vector3.RotateTowards(currentDir, new Vector3(desiredHorizDir.x, 0f, desiredHorizDir.z), turn * Mathf.Deg2Rad, 0f);
-                vel = new Vector3(blended.x * horizSpeed, vel.y, blended.z * horizSpeed);
-                horizontal = new Vector3(vel.x, 0f, vel.z);
-                horizSpeed = horizontal.magnitude;
+                float yacc = vel.y * -0.10f * pitchCos * tickScale;
+                vel.y += yacc;
+                vel.x += (lookX / hLook) * yacc;
+                vel.z += (lookZ / hLook) * yacc;
             }
 
-            // Convert pitch to "nose-down" factor: negative pitch in Unity (look down) => positive diveFactor
-            float diveFactor = -Mathf.Clamp(pitchDegrees / 45f, -1f, 1f);
-
-            // Horizontal acceleration when diving (Minecraft: look down to go faster).
-            float forwardAccel = diveFactor * p.PitchDiveAccel * dt;
-            if (forwardAccel > 0f)
+            // Looking down converts horizontal speed into additional downward/forward travel.
+            if (lookY < 0f && hLook > 0.001f)
             {
-                Vector3 accelVec = new Vector3(desiredHorizDir.x, 0f, desiredHorizDir.z).normalized * forwardAccel;
-                vel += accelVec;
-                horizontal = new Vector3(vel.x, 0f, vel.z);
-                horizSpeed = horizontal.magnitude;
+                float diveFactor = p.PitchDiveAccel / 18f; // Keep old config usable; 18 ~= baseline.
+                float yacc = hVel * (-lookY) * 0.04f * diveFactor * tickScale;
+                vel.y += yacc * 3.5f;
+                vel.x -= (lookX / hLook) * yacc;
+                vel.z -= (lookZ / hLook) * yacc;
             }
 
-            // Lift when pitching up while moving fast (trades horizontal speed for vertical lift)
-            float climbFactor = Mathf.Clamp(pitchDegrees / 35f, 0f, 1f);
-            if (climbFactor > 0.01f && horizSpeed > p.MinGlideSpeed * 0.75f)
+            // Looking up trades horizontal speed for lift (limited climb).
+            // This is the key "pull up from a dive" behavior.
+            if (lookY > 0f && hLook > 0.001f && hVel > p.MinGlideSpeed * 0.5f)
             {
-                float lift = climbFactor * p.PitchClimbLift * dt;
-                // Cost: remove some horizontal speed when trading for height
-                float horizontalCost = lift * 0.35f;
-                horizSpeed = Mathf.Max(0f, horizSpeed - horizontalCost);
-                vel.y += lift;
-                if (horizontal.sqrMagnitude > 1e-6f)
+                float climbFactor = p.PitchClimbLift / 28f; // 28 ~= baseline.
+                float baseLift = hVel * lookY * 0.03f * climbFactor * tickScale;
+                float pullUpBoost = Mathf.Max(0f, hVel - p.MinGlideSpeed) * lookY * 0.05f * climbFactor * tickScale;
+                float yacc = baseLift + pullUpBoost;
+                vel.y += yacc;
+                vel.x -= (lookX / hLook) * (yacc * 0.35f);
+                vel.z -= (lookZ / hLook) * (yacc * 0.35f);
+
+                // Extra sink cancellation so a strong pull-up can actually arrest descent.
+                if (vel.y < 0f)
                 {
-                    Vector3 horizDir = horizontal.normalized;
-                    vel = new Vector3(horizDir.x * horizSpeed, vel.y, horizDir.z * horizSpeed);
-                }
-                else
-                {
-                    vel = new Vector3(0f, vel.y, 0f);
+                    vel.y += Mathf.Min(-vel.y, yacc * 0.9f);
                 }
             }
 
-            // Gravity with multiplier (lighter than free fall while gliding)
-            float gravity = Physics.gravity.y * p.GravityMultiplier;
-            vel.y += gravity * dt;
-
-            // Quadratic-ish drag against excess speed (stabilizes high-speed dive)
-            float speed = vel.magnitude;
-            if (speed > 0.01f)
+            // Smoothly align horizontal velocity with camera heading.
+            if (hLook > 0.001f)
             {
-                Vector3 drag = -vel.normalized * (p.BaseDrag * speed * dt);
-                vel += drag;
+                float alignGain = 0.10f * (p.TurnAlignment / 240f) * tickScale;
+                vel.x += ((lookX / hLook) * hVel - vel.x) * alignGain;
+                vel.z += ((lookZ / hLook) * hVel - vel.z) * alignGain;
             }
 
-            horizSpeed = new Vector3(vel.x, 0f, vel.z).magnitude;
-            horizontalSpeedOut = Mathf.Clamp(horizSpeed, 0f, p.MaxGlideSpeed * 2f); // clamp only absurd values
+            // Drag terms similar to Elytra damping behavior.
+            float dragLin = Mathf.Clamp01(1f - (0.01f * tickScale) - (p.BaseDrag * 0.01f * tickScale));
+            float dragY = Mathf.Clamp01(1f - (0.02f * tickScale) - (p.BaseDrag * 0.01f * tickScale));
+            vel.x *= dragLin;
+            vel.z *= dragLin;
+            vel.y *= dragY;
+
+            // While pulling up, slightly reduce vertical damping so lift isn't immediately erased.
+            if (lookY > 0.1f)
+            {
+                float liftRetention = 1f + (lookY * 0.03f * (p.PitchClimbLift / 28f) * tickScale);
+                vel.y *= liftRetention;
+            }
+
+            hVel = new Vector3(vel.x, 0f, vel.z).magnitude;
+            horizontalSpeedOut = Mathf.Clamp(hVel, 0f, p.MaxGlideSpeed * 2f); // clamp only absurd values
 
             // Hard cap to avoid runaway numbers if another mod boosts speed
             if (vel.magnitude > p.MaxGlideSpeed * 1.5f)
@@ -119,10 +134,10 @@ namespace ValheimElytra.Flight
                 vel = vel.normalized * (p.MaxGlideSpeed * 1.5f);
             }
 
-            // Ensure a minimum forward glide when moving fast horizontally (anti-stall nudge)
-            if (horizontalSpeedOut < p.MinGlideSpeed && diveFactor > 0.15f && desiredHorizDir.sqrMagnitude > 0.001f)
+            // Ensure a minimum forward glide when diving (anti-stall nudge).
+            if (horizontalSpeedOut < p.MinGlideSpeed && lookY < -0.15f && hLook > 0.001f)
             {
-                Vector3 nudge = new Vector3(desiredHorizDir.x, 0f, desiredHorizDir.z).normalized * (p.MinGlideSpeed * 0.15f * dt);
+                Vector3 nudge = new Vector3(lookX / hLook, 0f, lookZ / hLook) * (p.MinGlideSpeed * 0.15f * dt);
                 vel += nudge;
             }
         }

@@ -83,6 +83,52 @@ namespace ValheimElytra.Flight
             return false;
         }
 
+        /// <summary>
+        /// Debug helper describing what the detector currently sees.
+        /// Safe to call when debugging only; includes reflection reads.
+        /// </summary>
+        public static string DescribeCapeState(Player player)
+        {
+            if (player == null)
+            {
+                return "player=null";
+            }
+
+            ItemDrop.ItemData? shoulder = TryGetShoulderItemData(player);
+            string shoulderName = shoulder?.m_shared?.m_name ?? "<null>";
+            bool shoulderIsFeather = IsFeatherCapeItem(shoulder);
+
+            Inventory? inv = player.GetInventory();
+            if (inv == null)
+            {
+                return $"shoulder={shoulderName}, shoulderFeather={shoulderIsFeather}, inventory=<null>";
+            }
+
+            int equippedCount = 0;
+            int featherEquippedCount = 0;
+            foreach (ItemDrop.ItemData? item in inv.GetAllItems())
+            {
+                if (item == null)
+                {
+                    continue;
+                }
+
+                bool equipped = IsProbablyEquippedByPlayer(player, item);
+                if (!equipped)
+                {
+                    continue;
+                }
+
+                equippedCount++;
+                if (IsFeatherCapeItem(item))
+                {
+                    featherEquippedCount++;
+                }
+            }
+
+            return $"shoulder={shoulderName}, shoulderFeather={shoulderIsFeather}, equippedItems={equippedCount}, featherEquipped={featherEquippedCount}";
+        }
+
         private static bool IsFeatherCapeItem(ItemDrop.ItemData? item)
         {
             if (item == null || item.m_shared == null)
