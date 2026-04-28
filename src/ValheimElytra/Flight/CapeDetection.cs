@@ -31,6 +31,13 @@ namespace ValheimElytra.Flight
             AccessTools.Field(typeof(ItemDrop.ItemData), "m_equipped")
             ?? AccessTools.Field(typeof(ItemDrop.ItemData), "m_equiped");
 
+        private static readonly FieldInfo? ItemDropPrefabField =
+            AccessTools.Field(typeof(ItemDrop.ItemData), "m_dropPrefab");
+
+        private static readonly MethodInfo? HumanoidIsItemEquippedMethod =
+            AccessTools.Method(typeof(Humanoid), "IsItemEquiped", new[] { typeof(ItemDrop.ItemData) })
+            ?? AccessTools.Method(typeof(Humanoid), "IsItemEquipped", new[] { typeof(ItemDrop.ItemData) });
+
         /// <summary>
         /// Returns true when the player's equipped shoulder item matches the feather cape prefab name.
         /// </summary>
@@ -42,12 +49,13 @@ namespace ValheimElytra.Flight
             }
 
             ItemDrop.ItemData? shoulder = TryGetShoulderItemData(player);
-            if (shoulder?.m_shared != null && shoulder.m_shared.m_name == FeatherCapeSharedName)
+            if (IsFeatherCapeItem(shoulder))
             {
                 return true;
             }
 
-            // Fallback: scan equipped items for the internal CapeFeather id (VisEquipment field renames, modded UIs, etc.).
+            // Fallback: scan inventory items and ask Humanoid if each item is equipped when possible.
+            // This handles builds/mod-setups where VisEquipment no longer stores ItemData in m_shoulderItem.
             Inventory? inv = player.GetInventory();
             if (inv == null)
             {
@@ -61,18 +69,75 @@ namespace ValheimElytra.Flight
                     continue;
                 }
 
-                if (!IsEquipped(item))
+                if (!IsProbablyEquippedByPlayer(player, item))
                 {
                     continue;
                 }
 
-                if (item.m_shared.m_name == FeatherCapeSharedName)
+                if (IsFeatherCapeItem(item))
                 {
                     return true;
                 }
             }
 
             return false;
+        }
+
+        private static bool IsFeatherCapeItem(ItemDrop.ItemData? item)
+        {
+            if (item == null || item.m_shared == null)
+            {
+                return false;
+            }
+
+            // Newer Valheim builds often use localized token names in m_shared.m_name.
+            string sharedName = item.m_shared.m_name ?? string.Empty;
+            if (MatchesFeatherCapeId(sharedName))
+            {
+                return true;
+            }
+
+            // Additional robust check via drop prefab name if present.
+            if (ItemDropPrefabField != null)
+            {
+                object? dropPrefab = ItemDropPrefabField.GetValue(item);
+                if (dropPrefab is GameObject go && MatchesFeatherCapeId(go.name))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool MatchesFeatherCapeId(string raw)
+        {
+            if (string.IsNullOrEmpty(raw))
+            {
+                return false;
+            }
+
+            // Accept internal prefab id and localization token variants.
+            return raw == FeatherCapeSharedName ||
+                   raw == "$item_cape_feather" ||
+                   raw.IndexOf("capefeather", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   raw.IndexOf("cape_feather", System.StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsProbablyEquippedByPlayer(Player player, ItemDrop.ItemData item)
+        {
+            // Prefer the game API when available.
+            if (HumanoidIsItemEquippedMethod != null)
+            {
+                object? equippedObj = HumanoidIsItemEquippedMethod.Invoke(player, new object[] { item });
+                if (equippedObj is bool equippedViaMethod)
+                {
+                    return equippedViaMethod;
+                }
+            }
+
+            // Fallback to item field if method unavailable.
+            return IsEquipped(item);
         }
 
         /// <summary>Best-effort read of the shoulder/cape slot <see cref="ItemDrop.ItemData"/>.</summary>
