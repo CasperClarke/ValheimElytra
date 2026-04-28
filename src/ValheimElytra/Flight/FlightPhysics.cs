@@ -47,85 +47,61 @@ namespace ValheimElytra.Flight
             Params p,
             out float horizontalSpeedOut)
         {
-            // Minecraft's formulas are tuned around a 20 TPS update.
-            float tickScale = Mathf.Clamp(dt / 0.05f, 0.15f, 2f);
+            // Direct Elytra-style equations (same structure/constants as snippet), with minimal dt normalization.
+            // Snippet assumes a 20 TPS step (~0.05s), so we scale additive terms by dt/0.05 and exponentiate damping.
+            float tickScale = Mathf.Clamp(dt / 0.05f, 0.1f, 3f);
 
             Vector3 look = cameraForward.sqrMagnitude > 0.001f ? cameraForward.normalized : Vector3.forward;
             float lookX = look.x;
             float lookY = look.y;
             float lookZ = look.z;
 
-            Vector3 horizontal = new Vector3(vel.x, 0f, vel.z);
-            float hVel = horizontal.magnitude;
+            float pitchRad = pitchDegrees * Mathf.Deg2Rad;
+            float pitchCos = Mathf.Cos(pitchRad);
+            float pitchSin = Mathf.Sin(pitchRad);
+
+            float hVel = Mathf.Sqrt((vel.x * vel.x) + (vel.z * vel.z));
             float hLook = Mathf.Sqrt((lookX * lookX) + (lookZ * lookZ));
-            float pitchCos = Mathf.Cos(pitchDegrees * Mathf.Deg2Rad);
-            pitchCos = Mathf.Abs(pitchCos);
-            pitchCos *= pitchCos;
 
-            // Baseline glide gravity (customizable). This is the primary sink term.
-            vel.y += Physics.gravity.y * p.GravityMultiplier * dt;
+            // Equivalent of: sqrpitchcos = pitchcos^2 * min(1, |look| / 0.4)
+            float lookMag = Mathf.Sqrt((lookX * lookX) + (lookY * lookY) + (lookZ * lookZ));
+            float sqrPitchCos = pitchCos * pitchCos * Mathf.Min(1f, lookMag / 0.4f);
 
-            // Elytra-like down-velocity conversion into forward motion.
+            // Vanilla-ish gravity term from snippet: velY += -0.08 + sqrpitchcos * 0.06
+            float mcGravityStep = (-0.08f + (sqrPitchCos * 0.06f)) * p.GravityMultiplier;
+            vel.y += mcGravityStep * tickScale;
+
             if (vel.y < 0f && hLook > 0.001f)
             {
-                float yacc = vel.y * -0.10f * pitchCos * tickScale;
+                float yacc = vel.y * -0.1f * sqrPitchCos * (p.PitchDiveAccel / 18f) * tickScale;
                 vel.y += yacc;
-                vel.x += (lookX / hLook) * yacc;
-                vel.z += (lookZ / hLook) * yacc;
+                vel.x += lookX * yacc / hLook;
+                vel.z += lookZ * yacc / hLook;
             }
 
-            // Looking down converts horizontal speed into additional downward/forward travel.
-            if (lookY < 0f && hLook > 0.001f)
+            // In the original snippet: if (pitch < 0) { ... }, with pitch where looking up is negative.
+            if (pitchRad < 0f && hLook > 0.001f)
             {
-                float diveFactor = p.PitchDiveAccel / 18f; // Keep old config usable; 18 ~= baseline.
-                float yacc = hVel * (-lookY) * 0.04f * diveFactor * tickScale;
+                float yacc = hVel * -pitchSin * 0.04f * (p.PitchClimbLift / 28f) * tickScale;
                 vel.y += yacc * 3.5f;
-                vel.x -= (lookX / hLook) * yacc;
-                vel.z -= (lookZ / hLook) * yacc;
+                vel.x -= lookX * yacc / hLook;
+                vel.z -= lookZ * yacc / hLook;
             }
 
-            // Looking up trades horizontal speed for lift (limited climb).
-            // This is the key "pull up from a dive" behavior.
-            if (lookY > 0f && hLook > 0.001f && hVel > p.MinGlideSpeed * 0.5f)
-            {
-                float climbFactor = p.PitchClimbLift / 28f; // 28 ~= baseline.
-                float baseLift = hVel * lookY * 0.03f * climbFactor * tickScale;
-                float pullUpBoost = Mathf.Max(0f, hVel - p.MinGlideSpeed) * lookY * 0.05f * climbFactor * tickScale;
-                float yacc = baseLift + pullUpBoost;
-                vel.y += yacc;
-                vel.x -= (lookX / hLook) * (yacc * 0.35f);
-                vel.z -= (lookZ / hLook) * (yacc * 0.35f);
-
-                // Extra sink cancellation so a strong pull-up can actually arrest descent.
-                if (vel.y < 0f)
-                {
-                    vel.y += Mathf.Min(-vel.y, yacc * 0.9f);
-                }
-            }
-
-            // Smoothly align horizontal velocity with camera heading.
             if (hLook > 0.001f)
             {
-                float alignGain = 0.10f * (p.TurnAlignment / 240f) * tickScale;
-                vel.x += ((lookX / hLook) * hVel - vel.x) * alignGain;
-                vel.z += ((lookZ / hLook) * hVel - vel.z) * alignGain;
+                float align = 1f - Mathf.Pow(1f - 0.1f, tickScale * (p.TurnAlignment / 240f));
+                vel.x += ((lookX / hLook) * hVel - vel.x) * align;
+                vel.z += ((lookZ / hLook) * hVel - vel.z) * align;
             }
 
-            // Drag terms similar to Elytra damping behavior.
-            float dragLin = Mathf.Clamp01(1f - (0.01f * tickScale) - (p.BaseDrag * 0.01f * tickScale));
-            float dragY = Mathf.Clamp01(1f - (0.02f * tickScale) - (p.BaseDrag * 0.01f * tickScale));
-            vel.x *= dragLin;
-            vel.z *= dragLin;
+            float dragXZ = Mathf.Pow(0.99f, tickScale * (p.BaseDrag / 0.15f));
+            float dragY = Mathf.Pow(0.98f, tickScale * (p.BaseDrag / 0.15f));
+            vel.x *= dragXZ;
             vel.y *= dragY;
+            vel.z *= dragXZ;
 
-            // While pulling up, slightly reduce vertical damping so lift isn't immediately erased.
-            if (lookY > 0.1f)
-            {
-                float liftRetention = 1f + (lookY * 0.03f * (p.PitchClimbLift / 28f) * tickScale);
-                vel.y *= liftRetention;
-            }
-
-            hVel = new Vector3(vel.x, 0f, vel.z).magnitude;
+            hVel = Mathf.Sqrt((vel.x * vel.x) + (vel.z * vel.z));
             horizontalSpeedOut = Mathf.Clamp(hVel, 0f, p.MaxGlideSpeed * 2f); // clamp only absurd values
 
             // Hard cap to avoid runaway numbers if another mod boosts speed
@@ -134,7 +110,7 @@ namespace ValheimElytra.Flight
                 vel = vel.normalized * (p.MaxGlideSpeed * 1.5f);
             }
 
-            // Ensure a minimum forward glide when diving (anti-stall nudge).
+            // Tiny anti-stall nudge for low-speed dives (not part of vanilla snippet, kept minimal).
             if (horizontalSpeedOut < p.MinGlideSpeed && lookY < -0.15f && hLook > 0.001f)
             {
                 Vector3 nudge = new Vector3(lookX / hLook, 0f, lookZ / hLook) * (p.MinGlideSpeed * 0.15f * dt);
