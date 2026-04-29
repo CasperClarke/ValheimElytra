@@ -89,6 +89,24 @@ namespace ValheimElytra.Flight
             0.0801f, 0.08448f, 0.08788f, 0.09154f, 0.09552f, 0.09974f
         };
 
+        /// <summary>
+        /// Geometric angle of attack (degrees): wing normal vs relative wind <c>-v̂</c>, same frame as <see cref="IntegrateGlide"/>.
+        /// </summary>
+        public static float ComputeGeometricAoADeg(Vector3 cameraForward, Vector3 velocity)
+        {
+            BuildAeroFrame(cameraForward, out _, out _, out _, out Vector3 bodyUp);
+            Vector3 lookNorm = cameraForward.sqrMagnitude > 0.001f ? cameraForward.normalized : Vector3.forward;
+            float vmag = velocity.magnitude;
+            Vector3 vHat = vmag > 1e-4f ? velocity / vmag : lookNorm;
+            float aoa = Mathf.Asin(Mathf.Clamp(Vector3.Dot(bodyUp, -vHat), -1f, 1f));
+            return aoa * Mathf.Rad2Deg;
+        }
+
+        public static float ClampPolarAoADeg(float aoaDeg)
+        {
+            return Mathf.Clamp(aoaDeg, PolarAoADeg[0], PolarAoADeg[PolarAoADeg.Length - 1]);
+        }
+
         /// <summary>Wing plane used for lift direction and AoA.</summary>
         private static void BuildAeroFrame(
             Vector3 cameraForward,
@@ -119,7 +137,10 @@ namespace ValheimElytra.Flight
         /// </summary>
         /// <param name="dt">Fixed delta time (<see cref="Time.fixedDeltaTime"/>).</param>
         /// <param name="vel">Current rigidbody velocity (modified in-place).</param>
-        /// <param name="cameraForward">Camera forward (full 3D direction).</param>
+        /// <param name="cameraForward">Camera forward (full 3D direction); sets lift plane / lateral aerodynamics.</param>
+        /// <param name="polarAoADeg">
+        /// Angle of attack (degrees) for polar Cl/Cd sampling — from longitudinal dynamics (command + static stability), not necessarily instantaneous geometry.
+        /// </param>
         /// <param name="p">Tuning parameters from BepInEx config.</param>
         /// <param name="rigidbodyUsesUnityGravity">
         /// When true, do not add <see cref="Physics.gravity"/> here — the rigidbody already receives it in Unity's physics step.
@@ -130,6 +151,7 @@ namespace ValheimElytra.Flight
             float dt,
             ref Vector3 vel,
             Vector3 cameraForward,
+            float polarAoADeg,
             Params p,
             bool rigidbodyUsesUnityGravity,
             out float horizontalSpeedOut)
@@ -155,10 +177,7 @@ namespace ValheimElytra.Flight
                 liftDir = Vector3.up;
             }
 
-            // Angle of attack from geometric wing normal vs relative wind; frame uses lookAero (pitched vs camera).
-            float aoa = Mathf.Asin(Mathf.Clamp(Vector3.Dot(bodyUp, -vHat), -1f, 1f));
-            float aoaDeg = aoa * Mathf.Rad2Deg;
-            aoaDeg = Mathf.Clamp(aoaDeg, PolarAoADeg[0], PolarAoADeg[PolarAoADeg.Length - 1]);
+            float aoaDeg = ClampPolarAoADeg(polarAoADeg);
 
             InterpolatePolar(aoaDeg, out float clPolar, out float cdPolar);
 

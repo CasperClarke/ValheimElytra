@@ -17,6 +17,20 @@ namespace ValheimElytra.Flight
         /// <summary>Time spent gliding this session (seconds) for stamina integration.</summary>
         public float GlideTime;
 
+        /// <summary>
+        /// Longitudinal static-stability state: effective angle of attack (degrees) fed to the polar. Reset when glide session ends.
+        /// </summary>
+        public float EffectiveAoADeg;
+
+        /// <summary>False until first glide tick initializes <see cref="EffectiveAoADeg"/> from commanded AoA.</summary>
+        public bool GlidePitchStateInitialized;
+
+        /// <summary>HUD: last glide tick longitudinal tuning snapshot (<see cref="ElytraFlightSimulation.TryGetGlidePitchDebug"/>).</summary>
+        internal GlidePitchDebugSnapshot LastGlidePitchDebug;
+
+        /// <summary>False until the first glide physics tick has populated <see cref="LastGlidePitchDebug"/>.</summary>
+        internal bool GlidePitchDebugReady;
+
         /// <summary>Last computed glide direction (horizontal), used for ZDO sync / interpolation.</summary>
         public Vector3 LastGlideDirectionHorizontal = Vector3.forward;
 
@@ -91,6 +105,9 @@ namespace ValheimElytra.Flight
         {
             IsGliding = false;
             GlideTime = 0f;
+            GlidePitchStateInitialized = false;
+            LastGlidePitchDebug = default;
+            GlidePitchDebugReady = false;
             VisualPoseApplied = false;
             // Do not clear velocity snapshots here — same rationale as fall-damage caps (airborne flicker).
         }

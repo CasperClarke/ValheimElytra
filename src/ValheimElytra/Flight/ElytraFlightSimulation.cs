@@ -26,6 +26,16 @@ namespace ValheimElytra.Flight
         private static ConfigEntry<float> TurnLossCoefficient { get; set; } = null!;
         private static ConfigEntry<float> MaxGlideSpeed { get; set; } = null!;
         private static ConfigEntry<float> StaminaDrainPerSecond { get; set; } = null!;
+        private static ConfigEntry<float> GlideMomentStaminaDrainScale { get; set; } = null!;
+        private static ConfigEntry<float> GlideMomentStaminaDrainReferenceSpeedMps { get; set; } = null!;
+        private static ConfigEntry<float> GlideMomentStaminaDrainAirspeedExponent { get; set; } = null!;
+        private static ConfigEntry<float> GlideMomentStaminaDrainAirspeedFloorMps { get; set; } = null!;
+        private static ConfigEntry<float> GlidePitchTrimAoADeg { get; set; } = null!;
+        private static ConfigEntry<float> GlidePitchControlResponse { get; set; } = null!;
+        private static ConfigEntry<float> GlidePitchStaticStability { get; set; } = null!;
+        private static ConfigEntry<float> GlidePitchAuthorityWithStamina { get; set; } = null!;
+        private static ConfigEntry<float> GlidePitchAuthorityExhausted { get; set; } = null!;
+        private static ConfigEntry<float> GlidePitchAuthorityExhaustedBelowStaminaFrac { get; set; } = null!;
         private static ConfigEntry<bool> VisualPoseEnabled { get; set; } = null!;
 
         /// <summary>
@@ -104,10 +114,90 @@ namespace ValheimElytra.Flight
             StaminaDrainPerSecond = config.Bind(
                 "Elytra Physics",
                 "StaminaDrainPerSecond",
-                4f,
+                0f,
                 new ConfigDescription(
-                    "Stamina drain per second while gliding (0 disables).",
+                    "Flat stamina drain per second while gliding (added on top of moment-based drain). 0 = pitch moment only.",
                     new AcceptableValueRange<float>(0f, 50f)));
+
+            GlideMomentStaminaDrainScale = config.Bind(
+                "Elytra Physics",
+                "GlideMomentStaminaDrainScale",
+                0.05f,
+                new ConfigDescription(
+                    "Stamina/s per unit |ω_ctrl|; multiplied by velocity factor (below). Typical drag-like effort increases with flight speed.",
+                    new AcceptableValueRange<float>(0f, 50f)));
+
+            GlideMomentStaminaDrainReferenceSpeedMps = config.Bind(
+                "Elytra Physics",
+                "GlideMomentStaminaDrainReferenceSpeedMps",
+                42f,
+                new ConfigDescription(
+                    "Reference |V| (m/s) for moment drain airspeed scaling. At this speed ratio V/Vref evaluates to 1 before exponent.",
+                    new AcceptableValueRange<float>(5f, 120f)));
+
+            GlideMomentStaminaDrainAirspeedExponent = config.Bind(
+                "Elytra Physics",
+                "GlideMomentStaminaDrainAirspeedExponent",
+                1f,
+                new ConfigDescription(
+                    "Moment stamina drain multiplied by clamp(V/Vref,…)^exp. 0 = ignore speed (pitch-only drain). 1 ≈ proportional to speed. 2 ≈ like dynamic pressure (V² tone).",
+                    new AcceptableValueRange<float>(0f, 3f)));
+
+            GlideMomentStaminaDrainAirspeedFloorMps = config.Bind(
+                "Elytra Physics",
+                "GlideMomentStaminaDrainAirspeedFloorMps",
+                1f,
+                new ConfigDescription(
+                    "Moment drain uses max(|velocity|,floor) before V/Vref ratio so stalled/slow glide still has baseline scaling.",
+                    new AcceptableValueRange<float>(0f, 25f)));
+
+            GlidePitchTrimAoADeg = config.Bind(
+                "Elytra Physics",
+                "GlidePitchTrimAoADeg",
+                5f,
+                new ConfigDescription(
+                    "Trim angle of attack (degrees) toward which the wing tends without pilot input (static stability).",
+                    new AcceptableValueRange<float>(-5f, 18f)));
+
+            GlidePitchControlResponse = config.Bind(
+                "Elytra Physics",
+                "GlidePitchControlResponse",
+                12f,
+                new ConfigDescription(
+                    "Longitudinal K_c (1/s): pitch rate toward camera-commanded AoA before authority tier multipliers (GlidePitchAuthorityWithStamina / Exhausted).",
+                    new AcceptableValueRange<float>(0f, 48f)));
+
+            GlidePitchStaticStability = config.Bind(
+                "Elytra Physics",
+                "GlidePitchStaticStability",
+                8f,
+                new ConfigDescription(
+                    "Static stability (1/s): restoring rate pulling effective AoA toward TrimAoA (positive = stable).",
+                    new AcceptableValueRange<float>(0f, 48f)));
+
+            GlidePitchAuthorityWithStamina = config.Bind(
+                "Elytra Physics",
+                "GlidePitchAuthorityWithStamina",
+                2f,
+                new ConfigDescription(
+                    "Pitch control multiplier when stamina fraction is above ExhaustedBelowStaminaFrac (not linear with bar — Valheim-style tier).",
+                    new AcceptableValueRange<float>(0f, 5f)));
+
+            GlidePitchAuthorityExhausted = config.Bind(
+                "Elytra Physics",
+                "GlidePitchAuthorityExhausted",
+                0.01f,
+                new ConfigDescription(
+                    "Pitch control multiplier when stamina is effectively empty (at/below fraction threshold or ~0 stamina).",
+                    new AcceptableValueRange<float>(0f, 1f)));
+
+            GlidePitchAuthorityExhaustedBelowStaminaFrac = config.Bind(
+                "Elytra Physics",
+                "GlidePitchAuthorityExhaustedBelowStaminaFrac",
+                0.02f,
+                new ConfigDescription(
+                    "When current stamina / max stamina is at or below this fraction, use GlidePitchAuthorityExhausted instead of WithStamina. Also if stamina ≤ ~0.",
+                    new AcceptableValueRange<float>(0f, 0.5f)));
 
             VisualPoseEnabled = config.Bind(
                 "Visual",
@@ -415,6 +505,33 @@ namespace ValheimElytra.Flight
             return state;
         }
 
+        /// <summary>
+        /// Scales moment-based stamina drain with airspeed — exp 0 leaves pitch-only behavior; 1 ≈ ∝|V|; 2 ≈ ∝V² tone.
+        /// </summary>
+        private static float MomentDrainAirspeedFactor(float velocityMagnitudeMps)
+        {
+            float exp = GlideMomentStaminaDrainAirspeedExponent.Value;
+            if (exp <= 1e-5f)
+            {
+                return 1f;
+            }
+
+            float vRef = Mathf.Max(GlideMomentStaminaDrainReferenceSpeedMps.Value, 3f);
+            float floor = Mathf.Max(GlideMomentStaminaDrainAirspeedFloorMps.Value, 0f);
+            float v = velocityMagnitudeMps;
+            if (floor > 1e-5f)
+            {
+                v = Mathf.Max(v, floor);
+            }
+            else
+            {
+                v = Mathf.Max(v, 0.25f);
+            }
+
+            float ratio = Mathf.Clamp(v / vRef, 0.04f, 8f);
+            return Mathf.Pow(ratio, exp);
+        }
+
         public static void TickPlayer(Player player, float dt)
         {
             if (!ValheimElytraPlugin.ModEnabled.Value)
@@ -518,11 +635,40 @@ namespace ValheimElytra.Flight
             bool rbUsesGravity = CharacterBodyAccess.TryGetBody(player) is { useGravity: true };
 
             Vector3 vel = CharacterBodyAccess.GetVelocity(player);
+            float vmagForMomentDrain = Mathf.Max(vel.magnitude, 1e-4f);
+
+            float alphaCmd = FlightPhysics.ComputeGeometricAoADeg(camForward, vel);
+            float trim = GlidePitchTrimAoADeg.Value;
+            float kc = GlidePitchControlResponse.Value;
+            float ks = GlidePitchStaticStability.Value;
+            float maxStamina = player.GetMaxStamina();
+            float staminaAtTickStart = player.GetStamina();
+            float staminaFracForAuthority = maxStamina > 1e-4f ? Mathf.Clamp01(staminaAtTickStart / maxStamina) : 1f;
+            float exhaustedFracThr = Mathf.Clamp01(GlidePitchAuthorityExhaustedBelowStaminaFrac.Value);
+            bool pitchAuthorityExhausted = staminaAtTickStart <= 0.02f || staminaFracForAuthority <= exhaustedFracThr + 1e-6f;
+            float authority = pitchAuthorityExhausted
+                ? GlidePitchAuthorityExhausted.Value
+                : GlidePitchAuthorityWithStamina.Value;
+
+            if (!state.GlidePitchStateInitialized)
+            {
+                state.EffectiveAoADeg = FlightPhysics.ClampPolarAoADeg(alphaCmd);
+                state.GlidePitchStateInitialized = true;
+            }
+
+            float alphaEff0 = state.EffectiveAoADeg;
+            float omegaCtrlRaw = kc * (alphaCmd - alphaEff0);
+            float omegaCtrl = omegaCtrlRaw * authority;
+            float omegaStab = ks * (trim - alphaEff0);
+            float omegaTotal = omegaCtrl + omegaStab;
+            float alphaEff1 = FlightPhysics.ClampPolarAoADeg(alphaEff0 + omegaTotal * dt);
+            state.EffectiveAoADeg = alphaEff1;
 
             FlightPhysics.IntegrateGlide(
                 dt,
                 ref vel,
                 camForward,
+                alphaEff1,
                 fp,
                 rbUsesGravity,
                 out float horizSpeed);
@@ -541,11 +687,49 @@ namespace ValheimElytra.Flight
                 state.VisualPoseApplied = true;
             }
 
-            // Stamina cost (same peer that owns movement)
+            // Stamina: optional flat drain plus moment drain ∝ |ω_ctrl| × airspeed factor (V/Vref)^exp.
+            float momentDrainAirspeedFactor = MomentDrainAirspeedFactor(vmagForMomentDrain);
+            float momentDrainPerSec = GlideMomentStaminaDrainScale.Value * Mathf.Abs(omegaCtrl) * momentDrainAirspeedFactor;
+
             if (StaminaDrainPerSecond.Value > 0f)
             {
                 player.UseStamina(StaminaDrainPerSecond.Value * dt);
             }
+
+            if (momentDrainPerSec > 0f)
+            {
+                player.UseStamina(momentDrainPerSec * dt);
+            }
+
+            float staminaAfter = player.GetStamina();
+            float staminaFracHud = maxStamina > 1e-4f ? Mathf.Clamp01(staminaAfter / maxStamina) : 1f;
+            state.LastGlidePitchDebug = new GlidePitchDebugSnapshot(
+                alphaCmdDeg: alphaCmd,
+                alphaEffBeforeDeg: alphaEff0,
+                alphaEffAfterDeg: alphaEff1,
+                trimAoADeg: trim,
+                pitchControlGainKc: kc,
+                pitchStaticStabilityKs: ks,
+                omegaCtrlRawDegPerSec: omegaCtrlRaw,
+                omegaCtrlAppliedDegPerSec: omegaCtrl,
+                omegaStaticStabilityDegPerSec: omegaStab,
+                omegaTotalDegPerSec: omegaTotal,
+                staminaCurrent: staminaAfter,
+                staminaMax: maxStamina,
+                staminaFracAfterDrain: staminaFracHud,
+                authorityApplied: authority,
+                pitchAuthorityExhaustedBranch: pitchAuthorityExhausted,
+                pitchAuthorityHealthyConfigured: GlidePitchAuthorityWithStamina.Value,
+                pitchAuthorityExhaustedConfigured: GlidePitchAuthorityExhausted.Value,
+                pitchAuthorityStaminaFracThreshold: exhaustedFracThr,
+                staminaFracWhenAuthorityChosen: staminaFracForAuthority,
+                glideMomentStaminaDrainScale: GlideMomentStaminaDrainScale.Value,
+                flatStaminaDrainPerSec: StaminaDrainPerSecond.Value,
+                velocityMagnitudeForMomentDrainMps: vmagForMomentDrain,
+                momentDrainAirspeedFactor: momentDrainAirspeedFactor,
+                momentDrainPerSecEstimated: momentDrainPerSec,
+                simDtSeconds: dt);
+            state.GlidePitchDebugReady = true;
 
             FlightSync.ApplyLocalGlideState(
                 player,
@@ -560,6 +744,25 @@ namespace ValheimElytra.Flight
                     $"glide={state.IsGliding}, hasCape={hasCape}, airborne={airborne}, dt={dt:0.000}, " +
                     $"capeState=[{CapeDetection.DescribeCapeState(player)}]");
             }
+        }
+
+        /// <summary>Latest glide longitudinal HUD snapshot when <see cref="FlightState.IsGliding"/>.</summary>
+        public static bool TryGetGlidePitchDebug(Player player, out GlidePitchDebugSnapshot snapshot)
+        {
+            snapshot = default;
+            if (player == null)
+            {
+                return false;
+            }
+
+            FlightState state = GetOrCreateState(player);
+            if (!state.IsGliding || !state.GlidePitchDebugReady)
+            {
+                return false;
+            }
+
+            snapshot = state.LastGlidePitchDebug;
+            return true;
         }
     }
 }
