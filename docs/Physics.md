@@ -14,7 +14,7 @@ Exact equations differ from Valheim’s physics integrator and float behavior, s
 
 ## Valheim integration points
 
-We run **after** `Player.FixedUpdate` in a Harmony **postfix** (`Patches/PlayerFixedUpdatePatch`). At that moment vanilla movement + water checks have run; we then rewrite `Rigidbody.velocity` on the owning client if:
+We run after the resolved character tick (`Patches/CharacterUpdatePatch`) in a Harmony **postfix**. At that moment vanilla movement + water checks have run; we then rewrite `Rigidbody.linearVelocity` on the owning client if:
 
 - Feather Cape (`CapeFeather`) is equipped (`Flight/CapeDetection.cs`)
 - Character is airborne (`!IsOnGround()`)
@@ -26,28 +26,25 @@ Access to the body is via the private Character field `m_body` (`Flight/Characte
 
 `FlightPhysics.IntegrateGlide`:
 
-1. **Yaw alignment**: blend horizontal velocity toward flattened camera forward (degrees/sec = `TurnResponsiveness`).
-2. **Pitch dive acceleration**: nose-down pitch adds forward acceleration scaled by `PitchDiveAcceleration`.
-3. **Pitch climb lift**: nose-up pitch adds vertical lift proportional to horizontal speed, while shaving horizontal magnitude (scaled by `PitchClimbLift`).
-4. **Gravity**: apply `Physics.gravity * GravityMultiplier`.
-5. **Drag**: approximate air resistance as `AirDrag * |v| * v` directionally.
-6. **Safety clamp**: prevent runaway speeds if another mod multiplies velocity.
+1. **Gravity**: `Physics.gravity` (same magnitude as Valheim / Unity during glide; no extra multiplier).
+2. **Lift / drag**: NACA 4415 \(C_L(\alpha)\), \(C_D(\alpha)\) from an XFOIL polar (see `FlightPhysics.cs`); drag magnitude is scaled by **`DragMultiplier`**. Force magnitudes use a small **minimum reference airspeed** for \(q\propto |v|^2\) so lift/drag do not fully collapse after heavy speed bleed; **AoA** still uses the real velocity direction. Diving faster comes from AoA / trajectory and gravity, not a separate thrust term.
+3. **Yaw alignment**: blend horizontal velocity toward flattened camera forward (degrees/sec = **`TurnResponsiveness`**), with speed bleed while turning (**`TurnLossCoefficient`**).
+4. **Safety clamp**: velocity caps derived from **`MaxGlideSpeed`** to limit runaway interaction with other mods.
 
 ## Network / authority model
 
 Physics runs only if `ZNetView.IsOwner()` — the same rule most client-side movement mods follow. Remote players rely on vanilla network transform updates. We optionally mirror small numbers into `ZDO` (`Networking/FlightSync.cs`) for telemetry, not authoritative simulation.
 
-## Tuning strategy
+## Config (user-facing)
 
-Start with defaults, then adjust in this order:
+- **`[General]`** — `Enabled`, `DebugLogging`
+- **`[Elytra Physics]`** — `DragMultiplier`, `TurnResponsiveness`, `TurnLossCoefficient`, `MaxGlideSpeed`, `StaminaDrainPerSecond`
+- **`[Visual]`** — `EnableVisualFlightPose`
 
-1. **`GravityMultiplier`** — overall floatiness.
-2. **`AirDrag`** — how quickly excess speed bleeds off (stabilizes dives).
-3. **`PitchDiveAcceleration` / `PitchClimbLift`** — Minecraft-like feel (trade-offs between speed and altitude).
-4. **`TurnResponsiveness`** — snappy vs floaty turning.
+Tuning: use **`DragMultiplier`** first for overall glide sink vs carry; then **`TurnResponsiveness`** for yaw authority.
 
 ## Known limitations
 
-- We do not alter animations/VFX; optional smoothing helpers exist in `Networking/RemoteGlideSmoother.cs` for future work.
+- Optional visual pose rotates the model toward velocity; optional smoothing helpers exist in `Networking/RemoteGlideSmoother.cs` for future work.
 - Feather cape’s vanilla **terminal velocity cap** is effectively replaced while gliding; on the ground normal cape rules return.
 - Competing mods that **also** rewrite `Rigidbody.velocity` in the same tick may fight us; Harmony patch ordering is outside this repository’s control.

@@ -8,8 +8,7 @@ namespace ValheimElytra.Flight
     /// This is not a perfect clone of Minecraft's equations (those depend on Minecraft's specific drag and
     /// tick order), but it captures the gameplay pattern:
     /// - camera forward sets your "nose"
-    /// - pitching down trades altitude for horizontal speed
-    /// - pitching up trades speed for lift (limited), at risk of stall
+    /// - pitching up (via camera attitude) trades speed for lift through AoA and the polar; diving is from gravity + trajectory, not an extra thrust term
     /// </para>
     /// <para>
     /// We operate on the Character's <c>Rigidbody.velocity</c> (<see cref="Player.m_body"/> on Humanoid),
@@ -20,16 +19,19 @@ namespace ValheimElytra.Flight
     {
         public struct Params
         {
-            public float GravityMultiplier;
-            public float BaseDrag;
             public float DragMultiplier;
-            public float PitchDiveAccel;
-            public float PitchClimbLift;
-            public float MinGlideSpeed;
-            public float MaxGlideSpeed;
             public float TurnAlignment;
-            public float StaminaDrainPerSecond;
+            /// <summary>Scales horizontal speed bleed when yaw-steering (rad/s × speed); not in the XFOIL polar.</summary>
+            public float TurnLossCoefficient;
+            /// <summary>Reference speed (m/s) for anti-glitch velocity caps; not physical terminal velocity.</summary>
+            public float MaxGlideSpeed;
         }
+
+        /// <summary>
+        /// Used only for scaling lift/drag magnitudes (q ∝ speed²). True airspeed below this still uses real
+        /// velocity direction for AoA, but avoids aerodynamic forces vanishing after heavy drag bleed (deep stall feel).
+        /// </summary>
+        private const float MinDynamicPressureReferenceSpeed = 4f;
 
         // XFOIL polar for NACA 4415 (2D section), transcribed from Airfoil Tools.
         // Source: http://airfoiltools.com/polar/details?polar=xf-naca4415-il-500000
@@ -83,14 +85,12 @@ namespace ValheimElytra.Flight
         /// <param name="dt">Fixed delta time (<see cref="Time.fixedDeltaTime"/>).</param>
         /// <param name="vel">Current rigidbody velocity (modified in-place).</param>
         /// <param name="cameraForward">Camera forward (full 3D direction).</param>
-        /// <param name="pitchDegrees">Pitch from <see cref="CameraSteering.GetCameraPitchDegrees"/>.</param>
         /// <param name="p">Tuning parameters from BepInEx config.</param>
         /// <param name="horizontalSpeedOut">Horizontal speed magnitude after integration (for sync / debug).</param>
         public static void IntegrateGlide(
             float dt,
             ref Vector3 vel,
             Vector3 cameraForward,
-            float pitchDegrees,
             Params p,
             out float horizontalSpeedOut)
         {
@@ -98,8 +98,11 @@ namespace ValheimElytra.Flight
             //   a = g + L + D, where L ⟂ v and D opposes v.
             // Camera controls body attitude, which changes angle-of-attack and thus Cl/Cd.
             Vector3 look = cameraForward.sqrMagnitude > 0.001f ? cameraForward.normalized : Vector3.forward;
-            float speed = Mathf.Max(vel.magnitude, 0.1f);
-            Vector3 vHat = vel / speed;
+            float vmag = vel.magnitude;
+            // Must be a unit vector; old max(|v|,0.1) trick made vHat non-unit when |v| < 0.1 and broke drag/lift direction.
+            Vector3 vHat = vmag > 1e-4f ? vel / vmag : look;
+            float speedForQ = Mathf.Max(vmag, MinDynamicPressureReferenceSpeed);
+            float q = speedForQ * speedForQ;
 
             // Body frame from camera.
             Vector3 bodyRight = Vector3.Cross(look, Vector3.up);
@@ -133,22 +136,20 @@ namespace ValheimElytra.Flight
 
             InterpolatePolar(aoaDeg, out float clPolar, out float cdPolar);
 
-            // Keep legacy config knobs useful as multipliers rather than hard-coded fudge.
-            float liftScale = (p.PitchClimbLift / 28f);
-            float cl = clPolar * liftScale;
-            float cd = cdPolar * (p.BaseDrag / 0.15f) * p.DragMultiplier;
+            float cl = clPolar;
+            float cd = cdPolar * p.DragMultiplier;
             cd = Mathf.Max(0.0001f, cd);
 
-            // q proxy (0.5 * rho * v^2 * S / m folded into constants below).
-            float q = speed * speed;
+            // q proxy (0.5 * rho * v^2 * S / m folded into constants below); magnitude uses speedForQ, not vmag.
 
             // Acceleration terms.
-            Vector3 gravityAcc = Physics.gravity * p.GravityMultiplier;
+            Vector3 gravityAcc = Physics.gravity;
             Vector3 liftAcc = liftDir * (q * cl * 0.035f);
             Vector3 dragAcc = -vHat * (q * cd * 0.020f);
 
-            // Optional dive-control authority (still physically plausible as posture-driven acceleration bias).
-            float lookDown = Mathf.Clamp(-look.y, 0f, 1f);
+            vel += (gravityAcc + liftAcc + dragAcc) * dt;
+
+            // Yaw steering toward look direction (gameplay control; polar is 2D and has no yaw rate).
             Vector3 lookHoriz = new Vector3(look.x, 0f, look.z);
             if (lookHoriz.sqrMagnitude > 0.001f)
             {
@@ -158,11 +159,7 @@ namespace ValheimElytra.Flight
             {
                 lookHoriz = new Vector3(vHat.x, 0f, vHat.z).normalized;
             }
-            Vector3 diveControlAcc = lookHoriz * (p.PitchDiveAccel * 0.03f * lookDown);
 
-            vel += (gravityAcc + liftAcc + dragAcc + diveControlAcc) * dt;
-
-            // Yaw steering toward look direction (control, not free acceleration).
             Vector3 horizVel = new Vector3(vel.x, 0f, vel.z);
             float horizSpeed = horizVel.magnitude;
             if (horizSpeed > 0.01f && lookHoriz.sqrMagnitude > 0.001f)
@@ -174,8 +171,7 @@ namespace ValheimElytra.Flight
                 // Turning should cost energy: apply extra drag from heading-rate ("induced turn drag").
                 float turnAngle = Vector3.Angle(currentDir, turned) * Mathf.Deg2Rad; // radians this tick
                 float turnRate = turnAngle / Mathf.Max(dt, 1e-4f); // rad/s
-                float turnLossCoeff = 0.020f * (1f + (p.BaseDrag / 0.15f));
-                float turnDragMag = turnLossCoeff * turnRate * horizSpeed;
+                float turnDragMag = p.TurnLossCoefficient * turnRate * horizSpeed;
                 float postTurnSpeed = Mathf.Max(0f, horizSpeed - (turnDragMag * dt));
 
                 vel.x = turned.x * postTurnSpeed;
@@ -183,9 +179,10 @@ namespace ValheimElytra.Flight
             }
 
             // Safety clamp only (kept to prevent numeric blowups in modded stacks).
-            if (vel.magnitude > p.MaxGlideSpeed * 1.5f)
+            float cap = p.MaxGlideSpeed * 1.5f;
+            if (vel.magnitude > cap)
             {
-                vel = vel.normalized * (p.MaxGlideSpeed * 1.5f);
+                vel = vel.normalized * cap;
             }
 
             horizontalSpeedOut = Mathf.Clamp(new Vector3(vel.x, 0f, vel.z).magnitude, 0f, p.MaxGlideSpeed * 2f);

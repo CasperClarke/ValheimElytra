@@ -18,82 +18,46 @@ namespace ValheimElytra.Flight
         private static readonly Dictionary<int, FlightState> StatesByPlayerId = new Dictionary<int, FlightState>();
         private static int _debugTickCounter;
 
-        private static ConfigEntry<float> GravityMultiplier { get; set; } = null!;
-        private static ConfigEntry<float> BaseDrag { get; set; } = null!;
         private static ConfigEntry<float> DragMultiplier { get; set; } = null!;
-        private static ConfigEntry<float> PitchDiveAccel { get; set; } = null!;
-        private static ConfigEntry<float> PitchClimbLift { get; set; } = null!;
-        private static ConfigEntry<float> MinGlideSpeed { get; set; } = null!;
-        private static ConfigEntry<float> MaxGlideSpeed { get; set; } = null!;
         private static ConfigEntry<float> TurnAlignment { get; set; } = null!;
+        private static ConfigEntry<float> TurnLossCoefficient { get; set; } = null!;
+        private static ConfigEntry<float> MaxGlideSpeed { get; set; } = null!;
         private static ConfigEntry<float> StaminaDrainPerSecond { get; set; } = null!;
         private static ConfigEntry<bool> VisualPoseEnabled { get; set; } = null!;
 
         public static void BindConfig(ConfigFile config)
         {
-            GravityMultiplier = config.Bind(
-                "Elytra Physics",
-                "GravityMultiplier",
-                0.45f,
-                new ConfigDescription(
-                    "Effective gravity multiplier while gliding (1 = full gravity). Lower = floatier glide.",
-                    new AcceptableValueRange<float>(0.05f, 1.5f)));
-
-            BaseDrag = config.Bind(
-                "Elytra Physics",
-                "AirDrag",
-                0.15f,
-                new ConfigDescription(
-                    "Air drag coefficient (higher bleeds speed faster). Tweak with GravityMultiplier.",
-                    new AcceptableValueRange<float>(0.01f, 1f)));
-
             DragMultiplier = config.Bind(
                 "Elytra Physics",
                 "DragMultiplier",
                 1.2f,
                 new ConfigDescription(
-                    "Multiplier applied to NACA 4415 Cd(alpha) after BaseDrag scaling. >1.0 adds drag, <1.0 reduces drag.",
-                    new AcceptableValueRange<float>(0.5f, 4f)));
-
-            PitchDiveAccel = config.Bind(
-                "Elytra Physics",
-                "PitchDiveAcceleration",
-                18f,
-                new ConfigDescription(
-                    "How strongly looking down accelerates you forward (Minecraft-like dive).",
-                    new AcceptableValueRange<float>(0f, 80f)));
-
-            PitchClimbLift = config.Bind(
-                "Elytra Physics",
-                "PitchClimbLift",
-                28f,
-                new ConfigDescription(
-                    "How strongly looking up converts horizontal speed into upward lift.",
-                    new AcceptableValueRange<float>(0f, 80f)));
-
-            MinGlideSpeed = config.Bind(
-                "Elytra Physics",
-                "MinGlideSpeed",
-                6f,
-                new ConfigDescription(
-                    "Soft minimum horizontal glide speed when diving (prevents immediate stall).",
-                    new AcceptableValueRange<float>(0f, 40f)));
-
-            MaxGlideSpeed = config.Bind(
-                "Elytra Physics",
-                "MaxGlideSpeed",
-                    42f,
-                new ConfigDescription(
-                    "Approximate velocity clamp for glitch safety with other mods.",
-                    new AcceptableValueRange<float>(10f, 120f)));
+                    "Multiplier on NACA 4415 Cd(alpha) from the polar. >1.0 more drag, <1.0 less. Large values for testing.",
+                    new AcceptableValueRange<float>(0.01f, 50000f)));
 
             TurnAlignment = config.Bind(
                 "Elytra Physics",
                 "TurnResponsiveness",
-                    240f,
+                240f,
                 new ConfigDescription(
                     "Degrees per second to align horizontal motion to camera yaw (higher = snappier turns).",
                     new AcceptableValueRange<float>(30f, 720f)));
+
+            TurnLossCoefficient = config.Bind(
+                "Elytra Physics",
+                "TurnLossCoefficient",
+                0.04f,
+                new ConfigDescription(
+                    "Extra horizontal speed bleed while turning (scales with turn rate × speed). 0 = no turn cost.",
+                    new AcceptableValueRange<float>(0f, 0.2f)));
+
+            MaxGlideSpeed = config.Bind(
+                "Elytra Physics",
+                "MaxGlideSpeed",
+                42f,
+                new ConfigDescription(
+                    "Reference cap (m/s) for velocity limits; total speed may reach 1.5× this value.",
+                    new AcceptableValueRange<float>(10f, 120f)));
 
             StaminaDrainPerSecond = config.Bind(
                 "Elytra Physics",
@@ -170,6 +134,14 @@ namespace ValheimElytra.Flight
 
             if (!canConsider)
             {
+                if (state.IsGliding && ValheimElytraPlugin.DebugLogging.Value)
+                {
+                    Vector3 v = CharacterBodyAccess.GetVelocity(player);
+                    ValheimElytraPlugin.Log.LogInfo(
+                        $"Elytra glide ended (sim stopped): isOnGround={player.IsOnGround()}, hasCape={hasCape}, " +
+                        $"speedH={new Vector3(v.x, 0f, v.z).magnitude:0.00}, |v|={v.magnitude:0.00}");
+                }
+
                 if (state.IsGliding)
                 {
                     state.ResetSession();
@@ -198,15 +170,10 @@ namespace ValheimElytra.Flight
 
             var fp = new FlightPhysics.Params
             {
-                GravityMultiplier = GravityMultiplier.Value,
-                BaseDrag = BaseDrag.Value,
                 DragMultiplier = DragMultiplier.Value,
-                PitchDiveAccel = PitchDiveAccel.Value,
-                PitchClimbLift = PitchClimbLift.Value,
-                MinGlideSpeed = MinGlideSpeed.Value,
-                MaxGlideSpeed = MaxGlideSpeed.Value,
                 TurnAlignment = TurnAlignment.Value,
-                StaminaDrainPerSecond = StaminaDrainPerSecond.Value,
+                TurnLossCoefficient = TurnLossCoefficient.Value,
+                MaxGlideSpeed = MaxGlideSpeed.Value,
             };
 
             Vector3 vel = CharacterBodyAccess.GetVelocity(player);
@@ -215,7 +182,6 @@ namespace ValheimElytra.Flight
                 dt,
                 ref vel,
                 camForward,
-                pitch,
                 fp,
                 out float horizSpeed);
 
