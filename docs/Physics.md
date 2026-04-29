@@ -27,7 +27,7 @@ Access to the body is via the private Character field `m_body` (`Flight/Characte
 `FlightPhysics.IntegrateGlide`:
 
 1. **Gravity**: `Physics.gravity` (same magnitude as Valheim / Unity during glide; no extra multiplier).
-2. **Lift / drag**: NACA 4415 \(C_L(\alpha)\), \(C_D(\alpha)\) from an XFOIL polar (see `FlightPhysics.cs`); **`DragMultiplier`** scales \(C_D\) only. Dimensional lift/drag use **\(L,D=\tfrac12\rho S C_{L,D}|\mathbf{v}|^2\)** with **`FlightPhysics.AirDensityKgPerM3`** (ISA sea level), **`FlightPhysics.WingReferenceAreaM2`**, and **`FlightPhysics.GliderMassKg`** for \(\mathbf{a}=\mathbf{F}/m\). Same \(S\) for lift and drag; \(S\) is an effective reference area (not mesh-derived). Optional future: `Rigidbody.mass` or config for \(m\) (and \(\rho\), \(S\)).
+2. **Lift / drag**: NACA 4415 \(C_L(\alpha)\), \(C_D(\alpha)\) from an XFOIL polar (see `FlightPhysics.cs`); **`DragMultiplier`** scales \(C_D\) only. Dimensional lift/drag use **\(L,D=\tfrac12\rho S C_{L,D}|\mathbf{v}|^2\)** with **`FlightPhysics.AirDensityKgPerM3`** (ISA sea level), **`WingReferenceAreaM2`** from config (defaults to 15 m²), and **`FlightPhysics.GliderMassKg`** for \(\mathbf{a}=\mathbf{F}/m\). Same \(S\) for lift and drag; \(S\) is an effective reference area (not mesh-derived). **`DragMultiplier`** is gameplay trim on \(C_D\); lift and drag magnitudes both scale with \(S\). Optional future: `Rigidbody.mass` or config for \(m\) (and \(\rho\)).
 3. **Yaw alignment**: blend horizontal velocity toward flattened camera forward (degrees/sec = **`TurnResponsiveness`**), with speed bleed while turning (**`TurnLossCoefficient`**).
 4. **Safety clamp**: velocity caps derived from **`MaxGlideSpeed`** to limit runaway interaction with other mods.
 
@@ -38,10 +38,10 @@ Physics runs only if `ZNetView.IsOwner()` — the same rule most client-side mov
 ## Config (user-facing)
 
 - **`[General]`** — `Enabled`, `DebugLogging`
-- **`[Elytra Physics]`** — `DragMultiplier`, `TurnResponsiveness`, `TurnLossCoefficient`, `MaxGlideSpeed`, `StaminaDrainPerSecond`
+- **`[Elytra Physics]`** — `DragMultiplier`, `WingReferenceAreaM2`, `TurnResponsiveness`, `TurnLossCoefficient`, `MaxGlideSpeed`, `StaminaDrainPerSecond`
 - **`[Visual]`** — `EnableVisualFlightPose`
 
-Tuning: use **`DragMultiplier`** first for overall glide sink vs carry; then **`TurnResponsiveness`** for yaw authority.
+Tuning: **`WingReferenceAreaM2`** (m², config, default 15) scales lift and drag together; **`DragMultiplier`** trims glide range via \(C_D\). Then **`TurnResponsiveness`** for yaw authority.
 
 ## Known limitations
 

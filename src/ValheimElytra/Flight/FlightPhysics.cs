@@ -25,6 +25,8 @@ namespace ValheimElytra.Flight
             public float TurnLossCoefficient;
             /// <summary>Reference speed (m/s) for anti-glitch velocity caps; not physical terminal velocity.</summary>
             public float MaxGlideSpeed;
+            /// <summary>Effective wing reference area (m²); lift and drag both ∝ S.</summary>
+            public float WingReferenceAreaM2;
         }
 
         // --- Aerodynamic scaling (polar Cl, Cd are dimensionless; rho, S, m supply SI consistency) ---
@@ -32,14 +34,14 @@ namespace ValheimElytra.Flight
         /// <summary>Air density (kg/m³). ISA sea level ~1.225; change for altitude / biomes if desired.</summary>
         public const float AirDensityKgPerM3 = 1.225f;
 
-        /// <summary>
-        /// Reference wing area (m²) for both lift and drag (same S as in standard L/D formulas with one polar).
-        /// Order of ~4–5 m² matches prior hand-tuned lift magnitude at <see cref="GliderMassKg"/>; increase for more lift.
-        /// </summary>
-        public const float WingReferenceAreaM2 = 4.6f;
-
         /// <summary>Glider mass (kg) for F/m until config/Rigidbody wiring exists.</summary>
         public const float GliderMassKg = 80f;
+
+        /// <summary>
+        /// Rotates the aerodynamic wing plane nose-up relative to the camera forward by this angle (degrees).
+        /// Polar AoA is computed in this frame so level camera implies ~this incidence vs flow when V aligns with look.
+        /// </summary>
+        public const float AeroPitchOffsetDegrees = 10f;
 
         // XFOIL polar for NACA 4415 (2D section), transcribed from Airfoil Tools.
         // Source: http://airfoiltools.com/polar/details?polar=xf-naca4415-il-500000
@@ -111,14 +113,16 @@ namespace ValheimElytra.Flight
             Vector3 vHat = vmag > 1e-4f ? vel / vmag : look;
             float q = vmag * vmag;
 
-            // Body frame from camera.
+            // Aerodynamic frame: pitch wing nose-up vs raw camera look so default incidence matches cape geometry / polar.
             Vector3 bodyRight = Vector3.Cross(look, Vector3.up);
             if (bodyRight.sqrMagnitude < 0.001f)
             {
                 bodyRight = Vector3.right;
             }
             bodyRight.Normalize();
-            Vector3 bodyUp = Vector3.Cross(bodyRight, look).normalized;
+            Vector3 lookAero = Quaternion.AngleAxis(AeroPitchOffsetDegrees, bodyRight) * look;
+            lookAero.Normalize();
+            Vector3 bodyUp = Vector3.Cross(bodyRight, lookAero).normalized;
             if (Vector3.Dot(bodyUp, Vector3.up) < 0f)
             {
                 bodyUp = -bodyUp;
@@ -136,7 +140,7 @@ namespace ValheimElytra.Flight
                 liftDir = Vector3.up;
             }
 
-            // Angle of attack: positive when nose pitched above velocity vector.
+            // Angle of attack from geometric wing normal vs relative wind; frame uses lookAero (pitched vs camera).
             float aoa = Mathf.Asin(Mathf.Clamp(Vector3.Dot(bodyUp, -vHat), -1f, 1f));
             float aoaDeg = aoa * Mathf.Rad2Deg;
             aoaDeg = Mathf.Clamp(aoaDeg, PolarAoADeg[0], PolarAoADeg[PolarAoADeg.Length - 1]);
@@ -148,7 +152,8 @@ namespace ValheimElytra.Flight
             cd = Mathf.Max(0.0001f, cd);
 
             float massKg = Mathf.Max(GliderMassKg, 0.1f);
-            float halfRhoSOverM = (0.5f * AirDensityKgPerM3 * WingReferenceAreaM2) / massKg;
+            float wingArea = Mathf.Max(p.WingReferenceAreaM2, 0.01f);
+            float halfRhoSOverM = (0.5f * AirDensityKgPerM3 * wingArea) / massKg;
 
             // --- Formula check (point mass, same S and rho for L and D) ---------------------------
             // Dynamic pressure: q_inf = 0.5 * rho * |V|^2  [Pa].  Here we fold 0.5*rho*S/m into halfRhoSOverM and use q = |V|^2:

@@ -19,6 +19,7 @@ namespace ValheimElytra.Flight
         private static int _debugTickCounter;
 
         private static ConfigEntry<float> DragMultiplier { get; set; } = null!;
+        private static ConfigEntry<float> WingReferenceAreaM2 { get; set; } = null!;
         private static ConfigEntry<float> TurnAlignment { get; set; } = null!;
         private static ConfigEntry<float> TurnLossCoefficient { get; set; } = null!;
         private static ConfigEntry<float> MaxGlideSpeed { get; set; } = null!;
@@ -30,10 +31,18 @@ namespace ValheimElytra.Flight
             DragMultiplier = config.Bind(
                 "Elytra Physics",
                 "DragMultiplier",
-                1.2f,
+                8f,
                 new ConfigDescription(
-                    "Multiplier on NACA 4415 Cd(alpha) from the polar. >1.0 more drag, <1.0 less. Large values for testing.",
+                    "Multiplier on polar Cd. Larger WingReferenceAreaM2 increases lift and drag together (both ∝ S); use lower values here than with a tiny area if limiting glide range.",
                     new AcceptableValueRange<float>(0.01f, 50000f)));
+
+            WingReferenceAreaM2 = config.Bind(
+                "Elytra Physics",
+                "WingReferenceAreaM2",
+                15f,
+                new ConfigDescription(
+                    "Effective wing reference area in m² (same S for lift and drag in L = ½ρSV²C). Not mesh area.",
+                    new AcceptableValueRange<float>(1f, 120f)));
 
             TurnAlignment = config.Bind(
                 "Elytra Physics",
@@ -46,10 +55,10 @@ namespace ValheimElytra.Flight
             TurnLossCoefficient = config.Bind(
                 "Elytra Physics",
                 "TurnLossCoefficient",
-                0.04f,
+                0.2f,
                 new ConfigDescription(
                     "Extra horizontal speed bleed while turning (scales with turn rate × speed). 0 = no turn cost.",
-                    new AcceptableValueRange<float>(0f, 0.2f)));
+                    new AcceptableValueRange<float>(0f, 0.8f)));
 
             MaxGlideSpeed = config.Bind(
                 "Elytra Physics",
@@ -171,6 +180,7 @@ namespace ValheimElytra.Flight
             var fp = new FlightPhysics.Params
             {
                 DragMultiplier = DragMultiplier.Value,
+                WingReferenceAreaM2 = WingReferenceAreaM2.Value,
                 TurnAlignment = TurnAlignment.Value,
                 TurnLossCoefficient = TurnLossCoefficient.Value,
                 MaxGlideSpeed = MaxGlideSpeed.Value,
