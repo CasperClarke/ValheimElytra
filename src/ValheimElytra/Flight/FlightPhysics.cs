@@ -8,7 +8,7 @@ namespace ValheimElytra.Flight
     /// This is not a perfect clone of Minecraft's equations (those depend on Minecraft's specific drag and
     /// tick order), but it captures the gameplay pattern:
     /// - camera forward sets your "nose"
-    /// - pitching up (via camera attitude) trades speed for lift through AoA and the polar; diving is from gravity + trajectory, not an extra thrust term
+    /// - pitching up trades speed for lift through AoA and the polar; diving uses gravity from Unity plus aerodynamic lift/drag on velocity (no duplicate gravity term when the rigidbody uses Unity gravity)
     /// </para>
     /// <para>
     /// We operate on the Character's <c>Rigidbody.velocity</c> (<see cref="Player.m_body"/> on Humanoid),
@@ -89,6 +89,31 @@ namespace ValheimElytra.Flight
             0.0801f, 0.08448f, 0.08788f, 0.09154f, 0.09552f, 0.09974f
         };
 
+        /// <summary>Wing plane used for lift direction and AoA.</summary>
+        private static void BuildAeroFrame(
+            Vector3 cameraForward,
+            out Vector3 lookNorm,
+            out Vector3 bodyRight,
+            out Vector3 lookAero,
+            out Vector3 bodyUp)
+        {
+            lookNorm = cameraForward.sqrMagnitude > 0.001f ? cameraForward.normalized : Vector3.forward;
+            bodyRight = Vector3.Cross(lookNorm, Vector3.up);
+            if (bodyRight.sqrMagnitude < 0.001f)
+            {
+                bodyRight = Vector3.right;
+            }
+
+            bodyRight.Normalize();
+            lookAero = Quaternion.AngleAxis(AeroPitchOffsetDegrees, bodyRight) * lookNorm;
+            lookAero.Normalize();
+            bodyUp = Vector3.Cross(bodyRight, lookAero).normalized;
+            if (Vector3.Dot(bodyUp, Vector3.up) < 0f)
+            {
+                bodyUp = -bodyUp;
+            }
+        }
+
         /// <summary>
         /// Integrate one FixedUpdate-style step for elytra gliding.
         /// </summary>
@@ -96,37 +121,27 @@ namespace ValheimElytra.Flight
         /// <param name="vel">Current rigidbody velocity (modified in-place).</param>
         /// <param name="cameraForward">Camera forward (full 3D direction).</param>
         /// <param name="p">Tuning parameters from BepInEx config.</param>
+        /// <param name="rigidbodyUsesUnityGravity">
+        /// When true, do not add <see cref="Physics.gravity"/> here — the rigidbody already receives it in Unity's physics step.
+        /// Applying it again in this postfix roughly doubles effective <i>g</i> vs vacuum √(2<i>gh</i>) expectations for steep dives.
+        /// </param>
         /// <param name="horizontalSpeedOut">Horizontal speed magnitude after integration (for sync / debug).</param>
         public static void IntegrateGlide(
             float dt,
             ref Vector3 vel,
             Vector3 cameraForward,
             Params p,
+            bool rigidbodyUsesUnityGravity,
             out float horizontalSpeedOut)
         {
             // Point-mass glider model:
             //   a = g + L + D, where L ⟂ v and D opposes v.
             // Camera controls body attitude, which changes angle-of-attack and thus Cl/Cd.
-            Vector3 look = cameraForward.sqrMagnitude > 0.001f ? cameraForward.normalized : Vector3.forward;
+            BuildAeroFrame(cameraForward, out Vector3 look, out _, out _, out Vector3 bodyUp);
             float vmag = vel.magnitude;
             // Must be a unit vector; old max(|v|,0.1) trick made vHat non-unit when |v| < 0.1 and broke drag/lift direction.
             Vector3 vHat = vmag > 1e-4f ? vel / vmag : look;
             float q = vmag * vmag;
-
-            // Aerodynamic frame: pitch wing nose-up vs raw camera look so default incidence matches cape geometry / polar.
-            Vector3 bodyRight = Vector3.Cross(look, Vector3.up);
-            if (bodyRight.sqrMagnitude < 0.001f)
-            {
-                bodyRight = Vector3.right;
-            }
-            bodyRight.Normalize();
-            Vector3 lookAero = Quaternion.AngleAxis(AeroPitchOffsetDegrees, bodyRight) * look;
-            lookAero.Normalize();
-            Vector3 bodyUp = Vector3.Cross(bodyRight, lookAero).normalized;
-            if (Vector3.Dot(bodyUp, Vector3.up) < 0f)
-            {
-                bodyUp = -bodyUp;
-            }
 
             // Lift is bodyUp projected onto plane normal to velocity.
             Vector3 liftDir = bodyUp - (Vector3.Dot(bodyUp, vHat) * vHat);
@@ -161,7 +176,7 @@ namespace ValheimElytra.Flight
             //   |a_D| = (0.5*rho*S/m) * Cd * |V|^2 = halfRhoSOverM * Cd * q
             // Directions: lift along liftDir (unit, orthogonal to vHat in the camera-body plane); drag along -vHat.
             // DragMultiplier only scales Cd (effective higher parasite / trim drag for gameplay).
-            Vector3 gravityAcc = Physics.gravity;
+            Vector3 gravityAcc = rigidbodyUsesUnityGravity ? Vector3.zero : Physics.gravity;
             Vector3 liftAcc = liftDir * (halfRhoSOverM * cl * q);
             Vector3 dragAcc = -vHat * (halfRhoSOverM * cd * q);
 

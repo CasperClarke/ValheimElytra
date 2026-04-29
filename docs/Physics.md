@@ -26,7 +26,7 @@ Access to the body is via the private Character field `m_body` (`Flight/Characte
 
 `FlightPhysics.IntegrateGlide`:
 
-1. **Gravity**: `Physics.gravity` (same magnitude as Valheim / Unity during glide; no extra multiplier).
+1. **Gravity**: By default **no explicit `Physics.gravity` term** when the player’s **`Rigidbody.useGravity`** is true — Unity’s physics step already applies the same gravity vector each simulation step; adding it again from our Harmony postfix was roughly doubling effective \(g\) vs \(\sqrt{2gh}\) for steep dives. When **`useGravity`** is false, we still apply **`Physics.gravity`** once here so aerodynamics still have something to balance against pathological setups.
 2. **Lift / drag**: NACA 4415 \(C_L(\alpha)\), \(C_D(\alpha)\) from an XFOIL polar (see `FlightPhysics.cs`); **`DragMultiplier`** scales \(C_D\) only. Dimensional lift/drag use **\(L,D=\tfrac12\rho S C_{L,D}|\mathbf{v}|^2\)** with **`FlightPhysics.AirDensityKgPerM3`** (ISA sea level), **`WingReferenceAreaM2`** from config (defaults to 15 m²), and **`FlightPhysics.GliderMassKg`** for \(\mathbf{a}=\mathbf{F}/m\). Same \(S\) for lift and drag; \(S\) is an effective reference area (not mesh-derived). **`DragMultiplier`** is gameplay trim on \(C_D\); lift and drag magnitudes both scale with \(S\). Optional future: `Rigidbody.mass` or config for \(m\) (and \(\rho\)).
 3. **Yaw alignment**: blend horizontal velocity toward flattened camera forward (degrees/sec = **`TurnResponsiveness`**), with speed bleed while turning (**`TurnLossCoefficient`**).
 4. **Safety clamp**: velocity caps derived from **`MaxGlideSpeed`** to limit runaway interaction with other mods.

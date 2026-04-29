@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace ValheimElytra.Flight
@@ -22,15 +23,76 @@ namespace ValheimElytra.Flight
         /// <summary>Cooldown after leaving glide before stamina can recharge (optional future use).</summary>
         public float GlideExitTimer;
 
+        /// <summary>
+        /// Vertical rigidbody velocity sampled at end of the last physics-aligned movement tick (CustomFixedUpdate /
+        /// FixedUpdate via <see cref="Patches.CharacterUpdatePatch"/>, not Update).
+        /// </summary>
+        public float VerticalVelocityEndOfPreviousPhysicsStep;
+
+        /// <summary>
+        /// Last sampled vertical velocity while <see cref="Character.IsOnGround"/> was false (physics step).
+        /// Cleared each grounded physics tick so walking does not retain stale air samples.
+        /// </summary>
+        public float VerticalVelocityLastAirbornePhysicsStep;
+
         /// <summary>Whether visual pose override is currently active for this player.</summary>
         public bool VisualPoseApplied;
 
+        /// <summary>
+        /// Rolling samples for cape impact damage (airborne ticks only — see <see cref="ElytraFlightSimulation.RecordPhysicsAlignedVerticalVelocity"/>).
+        /// </summary>
+        private readonly List<(float time, float metric)> _impactSpeedSamples = new List<(float, float)>();
+
+        /// <summary>
+        /// Non-negative impact metric queued from <c>UpdateGroundContact</c> prefix when suppressing vanilla fall damage;
+        /// <c>-1</c> when none. Cleared in postfix after applying custom damage.
+        /// </summary>
+        internal float PendingCapeImpactDamageSpeed = -1f;
+
+        internal void PushImpactSpeedSample(float timeSeconds, float metric)
+        {
+            _impactSpeedSamples.Add((timeSeconds, metric));
+            const float maxAge = 0.25f;
+            while (_impactSpeedSamples.Count > 0 && timeSeconds - _impactSpeedSamples[0].time > maxAge)
+            {
+                _impactSpeedSamples.RemoveAt(0);
+            }
+
+            while (_impactSpeedSamples.Count > 160)
+            {
+                _impactSpeedSamples.RemoveAt(0);
+            }
+        }
+
+        internal float MaxImpactMetricInWindow(float timeSeconds, float windowSeconds)
+        {
+            float cutoff = timeSeconds - windowSeconds;
+            float max = 0f;
+            for (int i = 0; i < _impactSpeedSamples.Count; i++)
+            {
+                (float t, float m) = _impactSpeedSamples[i];
+                if (t >= cutoff)
+                {
+                    max = Mathf.Max(max, m);
+                }
+            }
+
+            return max;
+        }
+
+        internal void ClearImpactSpeedSamples()
+        {
+            _impactSpeedSamples.Clear();
+        }
+
+        internal int ImpactSpeedSampleCount => _impactSpeedSamples.Count;
 
         public void ResetSession()
         {
             IsGliding = false;
             GlideTime = 0f;
             VisualPoseApplied = false;
+            // Do not clear velocity snapshots here — same rationale as fall-damage caps (airborne flicker).
         }
     }
 }

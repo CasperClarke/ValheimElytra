@@ -2,6 +2,7 @@ using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
+using UnityEngine;
 using ValheimElytra.Flight;
 using ValheimElytra.Patches;
 
@@ -33,6 +34,9 @@ namespace ValheimElytra
         internal static ConfigEntry<bool> ModEnabled { get; private set; } = null!;
         internal static ConfigEntry<bool> DebugLogging { get; private set; } = null!;
 
+        /// <summary>Live HUD readout of rigidbody vertical velocity and speed (local player).</summary>
+        internal static ConfigEntry<bool> ShowVelocityDebugOverlay { get; private set; } = null!;
+
         private Harmony? _harmony;
 
         private void Awake()
@@ -51,12 +55,75 @@ namespace ValheimElytra
                 false,
                 "Verbose logs for troubleshooting desync / physics (spammy).");
 
+            ShowVelocityDebugOverlay = Config.Bind(
+                "Debug",
+                "ShowVelocityDebugOverlay",
+                false,
+                "HUD: vy, |v|, height above solid (ray), vacuum equiv. fall height, cape impact preview / curve.");
+
             _harmony = new Harmony(PluginGuid);
             _harmony.PatchAll(typeof(CharacterUpdatePatch).Assembly);
 
             ElytraFlightSimulation.BindConfig(Config);
+            ElytraFlightSimulation.LogFallDamageStartupDiagnostics();
 
             Log.LogInfo($"{Name} {Version} loaded (Harmony patched on {CharacterUpdatePatch.ActiveMethodName}).");
+        }
+
+        private void OnGUI()
+        {
+            if (!ModEnabled.Value || !ShowVelocityDebugOverlay.Value)
+            {
+                return;
+            }
+
+            Player? local = Player.m_localPlayer;
+            if (local == null)
+            {
+                return;
+            }
+
+            Vector3 v = CharacterBodyAccess.GetVelocity(local);
+            Vector3 feet = local.transform.position;
+
+            string heightStr = GroundHeightProbe.TryHeightAboveGround(feet, out float hAg)
+                ? $"{hAg:F2} m"
+                : "(no ray hit)";
+
+            float vyDown = Mathf.Max(0f, -v.y);
+            const float g = 9.81f;
+            float vacuumEquivM = vyDown > 1e-4f ? (vyDown * vyDown) / (2f * g) : 0f;
+
+            GUILayout.BeginArea(new Rect(12f, 12f, 440f, 280f));
+            GUILayout.BeginVertical(GUI.skin.box);
+            GUILayout.Label($"Vertical (vy): {v.y:F2} m/s");
+            GUILayout.Label($"|velocity|: {v.magnitude:F2} m/s");
+            GUILayout.Label($"Height above solid (ray): {heightStr}");
+            GUILayout.Label($"Vacuum equiv. drop from |vy↓|: {vacuumEquivM:F2} m (compare to height ray)");
+
+            if (ElytraFlightSimulation.CapeVelocityFallDamageEnabled)
+            {
+                ElytraFlightSimulation.ComputeFallDamageDebugOverlay(
+                    local,
+                    v,
+                    out float sustained,
+                    out float metricNow,
+                    out float merged,
+                    out float previewHp,
+                    out int nSamples);
+
+                GUILayout.Label(ElytraFlightSimulation.FormatImpactCurveSummary());
+                GUILayout.Label(
+                    $"Impact now: {metricNow:F2}  sustained(max {ElytraFlightSimulation.GetImpactVelocityWindowSecondsClamped():F2}s): {sustained:F2}  merged≈{merged:F2}");
+                GUILayout.Label($"Airborne samples buffered: {nSamples}  cape preview if landed now: {previewHp:F0} hp");
+            }
+            else
+            {
+                GUILayout.Label("Cape velocity fall damage (FallDamageVelocityCap): off");
+            }
+
+            GUILayout.EndVertical();
+            GUILayout.EndArea();
         }
 
         private void OnDestroy()

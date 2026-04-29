@@ -56,6 +56,9 @@ namespace ValheimElytra.Patches
 
             float dt = ActiveMethodName.EndsWith(".Update") ? Time.deltaTime : Time.fixedDeltaTime;
             ElytraFlightSimulation.TickPlayer(player, dt);
+
+            // Cape impact fall damage samples rigidbody velocity each tick (including Player.Update fallback).
+            ElytraFlightSimulation.RecordPhysicsAlignedVerticalVelocity(player);
         }
     }
 }
