@@ -27,11 +27,19 @@ namespace ValheimElytra.Flight
             public float MaxGlideSpeed;
         }
 
+        // --- Aerodynamic scaling (polar Cl, Cd are dimensionless; rho, S, m supply SI consistency) ---
+        // L = 0.5 * rho * S * Cl * |V|^2 ,  D = 0.5 * rho * S * Cd * |V|^2  [N];  a = F / m.
+        /// <summary>Air density (kg/m³). ISA sea level ~1.225; change for altitude / biomes if desired.</summary>
+        public const float AirDensityKgPerM3 = 1.225f;
+
         /// <summary>
-        /// Used only for scaling lift/drag magnitudes (q ∝ speed²). True airspeed below this still uses real
-        /// velocity direction for AoA, but avoids aerodynamic forces vanishing after heavy drag bleed (deep stall feel).
+        /// Reference wing area (m²) for both lift and drag (same S as in standard L/D formulas with one polar).
+        /// Order of ~4–5 m² matches prior hand-tuned lift magnitude at <see cref="GliderMassKg"/>; increase for more lift.
         /// </summary>
-        private const float MinDynamicPressureReferenceSpeed = 4f;
+        public const float WingReferenceAreaM2 = 4.6f;
+
+        /// <summary>Glider mass (kg) for F/m until config/Rigidbody wiring exists.</summary>
+        public const float GliderMassKg = 80f;
 
         // XFOIL polar for NACA 4415 (2D section), transcribed from Airfoil Tools.
         // Source: http://airfoiltools.com/polar/details?polar=xf-naca4415-il-500000
@@ -101,8 +109,7 @@ namespace ValheimElytra.Flight
             float vmag = vel.magnitude;
             // Must be a unit vector; old max(|v|,0.1) trick made vHat non-unit when |v| < 0.1 and broke drag/lift direction.
             Vector3 vHat = vmag > 1e-4f ? vel / vmag : look;
-            float speedForQ = Mathf.Max(vmag, MinDynamicPressureReferenceSpeed);
-            float q = speedForQ * speedForQ;
+            float q = vmag * vmag;
 
             // Body frame from camera.
             Vector3 bodyRight = Vector3.Cross(look, Vector3.up);
@@ -140,12 +147,18 @@ namespace ValheimElytra.Flight
             float cd = cdPolar * p.DragMultiplier;
             cd = Mathf.Max(0.0001f, cd);
 
-            // q proxy (0.5 * rho * v^2 * S / m folded into constants below); magnitude uses speedForQ, not vmag.
+            float massKg = Mathf.Max(GliderMassKg, 0.1f);
+            float halfRhoSOverM = (0.5f * AirDensityKgPerM3 * WingReferenceAreaM2) / massKg;
 
-            // Acceleration terms.
+            // --- Formula check (point mass, same S and rho for L and D) ---------------------------
+            // Dynamic pressure: q_inf = 0.5 * rho * |V|^2  [Pa].  Here we fold 0.5*rho*S/m into halfRhoSOverM and use q = |V|^2:
+            //   |a_L| = (0.5*rho*S/m) * Cl * |V|^2 = halfRhoSOverM * Cl * q
+            //   |a_D| = (0.5*rho*S/m) * Cd * |V|^2 = halfRhoSOverM * Cd * q
+            // Directions: lift along liftDir (unit, orthogonal to vHat in the camera-body plane); drag along -vHat.
+            // DragMultiplier only scales Cd (effective higher parasite / trim drag for gameplay).
             Vector3 gravityAcc = Physics.gravity;
-            Vector3 liftAcc = liftDir * (q * cl * 0.035f);
-            Vector3 dragAcc = -vHat * (q * cd * 0.020f);
+            Vector3 liftAcc = liftDir * (halfRhoSOverM * cl * q);
+            Vector3 dragAcc = -vHat * (halfRhoSOverM * cd * q);
 
             vel += (gravityAcc + liftAcc + dragAcc) * dt;
 

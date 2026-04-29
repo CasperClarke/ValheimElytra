@@ -27,7 +27,7 @@ Access to the body is via the private Character field `m_body` (`Flight/Characte
 `FlightPhysics.IntegrateGlide`:
 
 1. **Gravity**: `Physics.gravity` (same magnitude as Valheim / Unity during glide; no extra multiplier).
-2. **Lift / drag**: NACA 4415 \(C_L(\alpha)\), \(C_D(\alpha)\) from an XFOIL polar (see `FlightPhysics.cs`); drag magnitude is scaled by **`DragMultiplier`**. Force magnitudes use a small **minimum reference airspeed** for \(q\propto |v|^2\) so lift/drag do not fully collapse after heavy speed bleed; **AoA** still uses the real velocity direction. Diving faster comes from AoA / trajectory and gravity, not a separate thrust term.
+2. **Lift / drag**: NACA 4415 \(C_L(\alpha)\), \(C_D(\alpha)\) from an XFOIL polar (see `FlightPhysics.cs`); **`DragMultiplier`** scales \(C_D\) only. Dimensional lift/drag use **\(L,D=\tfrac12\rho S C_{L,D}|\mathbf{v}|^2\)** with **`FlightPhysics.AirDensityKgPerM3`** (ISA sea level), **`FlightPhysics.WingReferenceAreaM2`**, and **`FlightPhysics.GliderMassKg`** for \(\mathbf{a}=\mathbf{F}/m\). Same \(S\) for lift and drag; \(S\) is an effective reference area (not mesh-derived). Optional future: `Rigidbody.mass` or config for \(m\) (and \(\rho\), \(S\)).
 3. **Yaw alignment**: blend horizontal velocity toward flattened camera forward (degrees/sec = **`TurnResponsiveness`**), with speed bleed while turning (**`TurnLossCoefficient`**).
 4. **Safety clamp**: velocity caps derived from **`MaxGlideSpeed`** to limit runaway interaction with other mods.
 

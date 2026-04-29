@@ -39,5 +39,20 @@ namespace ValheimElytra.Flight
                 body.linearVelocity = velocity;
             }
         }
+
+        /// <summary>
+        /// Rigidbody mass in kg. Reserved for a future config option (e.g. use physics mass vs constant); glide uses <see cref="FlightPhysics.GliderMassKg"/> until then.
+        /// </summary>
+        public static float GetMassKg(Character character)
+        {
+            Rigidbody? body = TryGetBody(character);
+            if (body == null)
+            {
+                return 80f;
+            }
+
+            float m = body.mass;
+            return m > 1e-3f ? m : 80f;
+        }
     }
 }
